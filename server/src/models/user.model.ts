@@ -12,7 +12,7 @@ export interface IApexUser extends Document {
     avatar_url: String,
     country: String,
     date_of_birth: Date,
-    phone: String
+    phone_number: String
   },
   game_profiles: [
     {
@@ -49,6 +49,15 @@ export interface IApexUser extends Document {
     identity_verified: Boolean,
     verified_at: Date
   },
+  reports_submitted: [
+    {
+      type: String, // 'bug', 'suggestion', 'feedback'
+      title: String,
+      description: String,
+      submitted_at: Date,
+      status: String // 'pending', 'reviewed', 'resolved'
+    }
+  ],
   created_at: Date,
   updated_at: Date,
   last_login: Date,

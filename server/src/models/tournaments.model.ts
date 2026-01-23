@@ -1,92 +1,202 @@
-import mongoose, {Document, Schema, Model} from 'mongoose';
+// ============================================================================
+// TOURNAMENTS.MODEL.TS - UPDATED VERSION
+// ============================================================================
+import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IApexTournament extends Document{
-  _id: mongoose.Types.ObjectId,
-  organizer_id: mongoose.Types.ObjectId, // reference to users
-  title: String, // required
-  description: String,
-  game_id: mongoose.Types.ObjectId, // reference to games collection
+export interface IApexTournament extends Document {
+  _id: mongoose.Types.ObjectId;
+  organizer_id: mongoose.Types.ObjectId; // reference to users
+  escrow_account_id: mongoose.Types.ObjectId; // reference to escrow_accounts
   
-  tournament_type: String, // enum: ['single_elimination', 'double_elimination', 'round_robin', 'battle_royale']
-  format: String, // enum: ['1v1', '2v2', '5v5', 'squad', 'solo']
+  // -------------------------------------------------------------------------
+  // BASIC INFORMATION
+  // -------------------------------------------------------------------------
+  title: string; // required
+  description: string;
+  game_id: mongoose.Types.ObjectId; // reference to games collection
   
+  tournament_type: string; // enum: ['single_elimination', 'double_elimination', 'round_robin', 'battle_royale']
+  format: string; // enum: ['1v1', '2v2', '5v5', 'squad', 'solo']
+  
+  // -------------------------------------------------------------------------
+  // SCHEDULE
+  // -------------------------------------------------------------------------
   schedule: {
-    registration_start: Date,
-    registration_end: Date,
-    tournament_start: Date,
-    tournament_end: Date,
-    check_in_start: Date,
-    check_in_end: Date
-  },
+    registration_start: Date;
+    registration_end: Date;
+    tournament_start: Date;
+    tournament_end: Date;
+    check_in_start: Date;
+    check_in_end: Date;
+    
+    // Auto-calculated critical timestamps
+    cancellation_cutoff: Date; // 24 hours before tournament_start
+    fee_deduction_time: Date; // 1 hour before tournament_start
+  };
   
+  // -------------------------------------------------------------------------
+  // CAPACITY
+  // -------------------------------------------------------------------------
   capacity: {
-    min_participants: Number,
-    max_participants: Number,
-    current_participants: Number
-  },
+    min_participants: number;
+    max_participants: number;
+    current_participants: number; // Count of paid & registered players
+    checked_in_count: number;
+  };
   
-  entry_fee: Number, // required
-  currency: String, // default: 'USD'
+  // -------------------------------------------------------------------------
+  // ENTRY FEE & CURRENCY
+  // -------------------------------------------------------------------------
+  entry_fee: number; // required (e.g., GHS 20)
+  currency: string; // default: 'GHS'
   
-  prize_pool: {
-    total_amount: Number,
-    source: String, // enum: ['entry_fees', 'sponsored', 'mixed']
+  // -------------------------------------------------------------------------
+  // PRIZE STRUCTURE (Organizer Defines This at Creation)
+  // -------------------------------------------------------------------------
+  prize_structure: {
+    organizer_gross_deposit: number; // What organizer pays upfront (e.g., GHS 5,050)
+    platform_fee_percentage: number; // 1% from organizer
+    platform_fee_amount: number; // GHS 50
+    net_prize_pool: number; // GHS 5,000 (what winners share)
+    
+    total_winning_positions: number; // e.g., 3 (1st, 2nd, 3rd)
     distribution: [
       {
-        position: Number, // 1st, 2nd, 3rd place
-        percentage: Number, // % of total prize pool
-        amount: Number // calculated amount
+        position: number; // 1, 2, 3, etc.
+        percentage: number; // % of net_prize_pool (must total 100%)
+        amount: number; // Auto-calculated (e.g., 50% of GHS 5,000 = GHS 2,500)
       }
-    ]
-  },
+    ];
+  };
   
-  platform_fee: {
-    percentage: Number, // e.g., 10%
-    amount: Number // calculated from entry fees
-  },
+  // -------------------------------------------------------------------------
+  // PLATFORM FEE FROM PLAYERS
+  // -------------------------------------------------------------------------
+  player_platform_fee: {
+    percentage: number; // 10%
+    per_player_amount: number; // GHS 2 (10% of GHS 20)
+    total_expected: number; // per_player_amount × current_participants
+  };
   
-  escrow: {
-    total_locked: Number,
-    organizer_contribution: Number,
-    entry_fees_collected: Number,
-    status: String // enum: ['pending', 'funded', 'distributed', 'refunded']
-  },
+  // -------------------------------------------------------------------------
+  // ORGANIZER EARNINGS (From Player Entry Fees)
+  // -------------------------------------------------------------------------
+  organizer_revenue: {
+    per_player_share: number; // GHS 18 (90% of GHS 20 entry fee)
+    total_expected: number; // per_player_share × current_participants
+    release_timing: string; // 'after_tournament_completion' (fixed)
+  };
   
+  // -------------------------------------------------------------------------
+  // RULES & SETTINGS
+  // -------------------------------------------------------------------------
   rules: {
-    description: String,
-    map_pool: [String],
-    game_mode: String,
-    scoring_system: String,
-    anti_cheat_required: Boolean
-  },
+    description: string;
+    map_pool: string[];
+    game_mode: string;
+    scoring_system: string;
+    anti_cheat_required: boolean;
+    stream_required: boolean;
+    in_game_id_required: boolean; // Players must provide their in-game ID
+  };
   
-  status: String, // enum: ['draft', 'open', 'registration_closed', 'ongoing', 'completed', 'cancelled']
+  // -------------------------------------------------------------------------
+  // TOURNAMENT STATUS
+  // -------------------------------------------------------------------------
+  status: string; 
+  /* enum:
+    'draft',                    // Organizer creating, not published
+    'awaiting_deposit',         // Published but organizer hasn't deposited prize pool
+    'open',                     // Accepting registrations, >24hrs before start
+    'locked',                   // <24hrs before start, no cancellations
+    'ready_to_start',           // Fees deducted, waiting for tournament_start time
+    'ongoing',                  // Tournament in progress
+    'awaiting_results',         // Tournament ended, waiting for organizer to submit winners
+    'verifying_results',        // System matching winners
+    'completed',                // All payouts distributed
+    'cancelled'                 // Cancelled by organizer (>24hrs before start only)
+  */
   
-  visibility: String, // enum: ['public', 'private', 'invite_only']
-  region: String, // e.g., 'NA', 'EU', 'ASIA'
+  // -------------------------------------------------------------------------
+  // RESULTS & WINNERS (Submitted by Organizer)
+  // -------------------------------------------------------------------------
+  results: {
+    submitted_by: mongoose.Types.ObjectId; // Organizer who submitted
+    submitted_at: Date;
+    
+    winners: [
+      {
+        position: number; // 1, 2, 3, etc.
+        in_game_id: string; // Organizer provides this
+        user_id: mongoose.Types.ObjectId; // System matches to registered player
+        verified: boolean; // True if in_game_id matches a registered player
+      }
+    ];
+    
+    verification_status: string; // enum: ['pending', 'verified', 'disputed']
+    verified_at: Date;
+  };
   
-  thumbnail_url: String,
-  banner_url: String,
+  // -------------------------------------------------------------------------
+  // VISIBILITY & REGION
+  // -------------------------------------------------------------------------
+  visibility: string; // enum: ['public', 'private', 'invite_only']
+  region: string; // e.g., 'GH', 'NA', 'EU', 'ASIA'
   
+  // -------------------------------------------------------------------------
+  // MEDIA
+  // -------------------------------------------------------------------------
+  thumbnail_url: string;
+  banner_url: string;
+  
+  // -------------------------------------------------------------------------
+  // ANALYTICS & METADATA
+  // -------------------------------------------------------------------------
   metadata: {
-    views: Number,
-    registrations_count: Number,
-    check_ins_count: Number
-  },
+    views: number;
+    registrations_count: number; // Total who registered
+    paid_registrations_count: number; // Total who paid
+    check_ins_count: number;
+    completion_rate: number; // % of registered players who showed up
+  };
   
-  created_at: Date,
-  updated_at: Date,
-  published_at: Date,
-  cancelled_at: Date,
-  cancellation_reason: String
+  // -------------------------------------------------------------------------
+  // CANCELLATION TRACKING
+  // -------------------------------------------------------------------------
+  cancellation: {
+    cancelled: boolean;
+    cancelled_by: mongoose.Types.ObjectId; // Who cancelled (organizer or admin)
+    cancelled_at: Date;
+    reason: string;
+    refunds_processed: boolean;
+    refund_summary: {
+      players_refunded: number;
+      total_refunded_to_players: number;
+      organizer_refunded: number;
+      platform_fees_retained: number;
+    };
+  };
+  
+  // -------------------------------------------------------------------------
+  // TIMESTAMPS
+  // -------------------------------------------------------------------------
+  created_at: Date;
+  updated_at: Date;
+  published_at: Date;
+  started_at: Date;
+  completed_at: Date;
 }
 
 /**
-  Indexes
-  organizer_id
-  game_id
-  status
-  schedule.tournament_start
-  schedule.registration_end
-  created_at
+ * Indexes:
+ * - organizer_id
+ * - game_id
+ * - escrow_account_id (unique)
+ * - status
+ * - schedule.tournament_start
+ * - schedule.registration_end
+ * - schedule.cancellation_cutoff
+ * - created_at
+ * - region
+ * - visibility
  */
