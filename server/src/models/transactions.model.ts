@@ -65,15 +65,86 @@ export interface IApexTransaction extends Document {
   failure_reason?: string;
 }
 
-/**
- * Indexes:
- * - idempotency_key (unique)
- * - user_id
- * - type
- * - direction
- * - status
- * - created_at
- * - related_to.entity_id
- * - Compound: user_id + type + status
- * - Compound: user_id + created_at (for transaction history)
- */
+
+const ApexTransactionSchema = new Schema<IApexTransaction>({
+  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  
+  idempotency_key: { type: String, required: true, unique: true },
+  
+  type: { 
+    type: String, 
+    enum: ['deposit', 'entry_fee', 'prize_won', 'payout_approved', 'payout_completed', 'refund', 'platform_fee'],
+    required: true 
+  },
+  direction: { type: String, enum: ['credit', 'debit'], required: true },
+  
+  amount: { type: Number, required: true },
+  currency: { type: String, default: 'GHS' },
+  
+  balance_before: { type: Number, required: true },
+  balance_after: { type: Number, required: true },
+  
+  status: { 
+    type: String, 
+    enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+    default: 'pending' 
+  },
+  
+  related_to: {
+    entity_type: { type: String, enum: ['tournament', 'match', 'payout_request', 'escrow'] },
+    entity_id: { type: Schema.Types.ObjectId, refPath: 'related_to.entity_type' }
+  },
+  
+  payment_details: {
+    payment_method: { type: String, enum: ['wallet', 'momo', 'card', 'paypal', 'bank_transfer'] },
+    payment_gateway: { type: String },
+    gateway_transaction_id: { type: String },
+    gateway_response: { type: String },
+    gateway_fee: { type: Number, default: 0 },
+    momo_network: { type: String, enum: ['MTN', 'Vodafone', 'AirtelTigo'] },
+    momo_number: { type: String }
+  },
+  
+  escrow: {
+    is_escrowed: { type: Boolean, default: false },
+    released_at: { type: Date },
+    released_to: { type: Schema.Types.ObjectId, ref: 'User' }
+  },
+  
+  retry: {
+    attempts: { type: Number, default: 0 },
+    max_attempts: { type: Number, default: 3 },
+    last_attempt_at: { type: Date },
+    next_retry_at: { type: Date },
+    retry_reason: { type: String }
+  },
+  
+  metadata: {
+    description: { type: String },
+    notes: { type: String },
+    admin_notes: { type: String },
+    ip_address: { type: String },
+    user_agent: { type: String }
+  },
+  
+  version: { type: Number, default: 1 },
+  
+  completed_at: { type: Date },
+  failed_at: { type: Date },
+  failure_reason: { type: String }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexTransactionSchema.index({ idempotency_key: 1 }, { unique: true });
+ApexTransactionSchema.index({ user_id: 1 });
+ApexTransactionSchema.index({ type: 1 });
+ApexTransactionSchema.index({ direction: 1 });
+ApexTransactionSchema.index({ status: 1 });
+ApexTransactionSchema.index({ created_at: -1 });
+ApexTransactionSchema.index({ 'related_to.entity_id': 1 });
+ApexTransactionSchema.index({ user_id: 1, type: 1, status: 1 });
+ApexTransactionSchema.index({ user_id: 1, created_at: -1 });
+
+export const Transaction = mongoose.model<IApexTransaction>('ApexTransaction', ApexTransactionSchema);

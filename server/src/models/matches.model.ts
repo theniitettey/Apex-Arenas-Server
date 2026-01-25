@@ -106,15 +106,114 @@ export interface IApexMatch extends Document {
   updated_at: Date;
 }
 
-/**
- * Indexes:
- * - tournament_id
- * - status
- * - participants.user_id
- * - participants.team_id
- * - schedule.scheduled_time
- * - next_match_id
- * - winner_id
- * - Compound: tournament_id + round + match_number (unique)
- * - Compound: tournament_id + status (for finding active matches)
- */
+
+const ApexMatchSchema = new Schema<IApexMatch>({
+  tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
+  round: { type: Number, required: true },
+  round_name: { type: String },
+  match_number: { type: Number, required: true },
+  
+  format: {
+    best_of: { type: Number, default: 1 },
+    games_played: { type: Number, default: 0 },
+    games_to_win: { type: Number, default: 1 }
+  },
+  
+  next_match_id: { type: Schema.Types.ObjectId, ref: 'Match' },
+  previous_match_ids: [{ type: Schema.Types.ObjectId, ref: 'Match' }],
+  bracket_position: { type: String, enum: ['upper', 'lower', 'grand_final', 'main'], default: 'main' },
+  
+  participants: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+    team_id: { type: Schema.Types.ObjectId, ref: 'Team' },
+    in_game_id: { type: String, required: true },
+    seed_number: { type: Number },
+    score: { type: Number, default: 0 },
+    result: { type: String, enum: ['win', 'loss', 'draw', 'no_show', 'pending'], default: 'pending' },
+    is_ready: { type: Boolean, default: false },
+    ready_at: { type: Date }
+  }],
+  
+  games: [{
+    game_number: { type: Number, required: true },
+    winner_id: { type: Schema.Types.ObjectId },
+    scores: [{
+      participant_id: { type: Schema.Types.ObjectId, required: true },
+      score: { type: Number, default: 0 }
+    }],
+    map: { type: String },
+    duration_minutes: { type: Number },
+    started_at: { type: Date },
+    completed_at: { type: Date }
+  }],
+  
+  winner_id: { type: Schema.Types.ObjectId },
+  loser_id: { type: Schema.Types.ObjectId },
+  
+  schedule: {
+    scheduled_time: { type: Date, required: true },
+    ready_check_time: { type: Date },
+    started_at: { type: Date },
+    completed_at: { type: Date }
+  },
+  
+  status: { 
+    type: String, 
+    enum: ['pending', 'scheduled', 'ready_check', 'ongoing', 'completed', 'disputed', 'cancelled'],
+    default: 'pending' 
+  },
+  
+  game_details: {
+    map: { type: String },
+    game_mode: { type: String },
+    duration_minutes: { type: Number }
+  },
+  
+  result_reported_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  result_reported_at: { type: Date },
+  result_confirmed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  result_confirmed_at: { type: Date },
+  
+  proof: {
+    screenshots: [{ type: String }],
+    video_url: { type: String },
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_at: { type: Date }
+  },
+  
+  dispute: {
+    is_disputed: { type: Boolean, default: false },
+    disputed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    dispute_reason: { type: String },
+    disputed_at: { type: Date },
+    evidence: [{ type: String }],
+    resolved: { type: Boolean, default: false },
+    resolution: { type: String },
+    resolved_at: { type: Date },
+    resolved_by: { type: Schema.Types.ObjectId, ref: 'User' }
+  },
+  
+  admin_override: {
+    overridden: { type: Boolean, default: false },
+    overridden_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    overridden_at: { type: Date },
+    reason: { type: String },
+    original_winner_id: { type: Schema.Types.ObjectId }
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexMatchSchema.index({ tournament_id: 1 });
+ApexMatchSchema.index({ status: 1 });
+ApexMatchSchema.index({ 'participants.user_id': 1 });
+ApexMatchSchema.index({ 'participants.team_id': 1 });
+ApexMatchSchema.index({ 'schedule.scheduled_time': 1 });
+ApexMatchSchema.index({ next_match_id: 1 }, { sparse: true });
+ApexMatchSchema.index({ winner_id: 1 }, { sparse: true });
+ApexMatchSchema.index({ tournament_id: 1, round: 1, match_number: 1 }, { unique: true });
+ApexMatchSchema.index({ tournament_id: 1, status: 1 });
+
+
+export const Match = mongoose.model<IApexMatch>('ApexMatch', ApexMatchSchema);

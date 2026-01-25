@@ -66,16 +66,81 @@ export interface IApexRegistration extends Document {
   withdrawal_reason?: string;
 }
 
-/**
- * Indexes:
- * - tournament_id
- * - user_id
- * - team_id
- * - in_game_id
- * - status
- * - Compound: tournament_id + user_id (unique)
- * - Compound: tournament_id + in_game_id (unique per tournament)
- * - Compound: tournament_id + team_id (unique per tournament for team registrations)
- * - payment.transaction_id
- * - refund.status
- */
+
+const ApexRegistrationSchema = new Schema<IApexRegistration>({
+  tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  team_id: { type: Schema.Types.ObjectId, ref: 'Team' },
+  
+  registration_type: { type: String, enum: ['solo', 'team'], required: true },
+  
+  in_game_id: { type: String, required: true },
+  
+  team_members: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    in_game_id: { type: String, required: true },
+    role: { type: String, enum: ['captain', 'player', 'substitute'], default: 'player' },
+    confirmed: { type: Boolean, default: false },
+    confirmed_at: { type: Date }
+  }],
+  
+  payment: {
+    entry_fee_paid: { type: Number, default: 0 },
+    payment_method: { type: String, enum: ['wallet', 'momo', 'card', 'free'] },
+    transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    paid_at: { type: Date }
+  },
+  
+  refund: {
+    requested: { type: Boolean, default: false },
+    requested_at: { type: Date },
+    reason: { type: String },
+    status: { type: String, enum: ['pending', 'approved', 'processed', 'denied'] },
+    amount: { type: Number, default: 0 },
+    transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    processed_at: { type: Date },
+    processed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    denial_reason: { type: String }
+  },
+  
+  status: { 
+    type: String, 
+    enum: ['pending_payment', 'registered', 'checked_in', 'disqualified', 'withdrawn', 'cancelled'],
+    default: 'pending_payment' 
+  },
+  
+  check_in: {
+    checked_in: { type: Boolean, default: false },
+    checked_in_at: { type: Date },
+    checked_in_by: { type: Schema.Types.ObjectId, ref: 'User' }
+  },
+  
+  seed_number: { type: Number },
+  
+  final_placement: { type: Number },
+  prize_won: { type: Number, default: 0 },
+  
+  notes: { type: String },
+  disqualification_reason: { type: String },
+  
+  withdrawn_at: { type: Date },
+  withdrawal_reason: { type: String }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexRegistrationSchema.index({ tournament_id: 1 });
+ApexRegistrationSchema.index({ user_id: 1 });
+ApexRegistrationSchema.index({ team_id: 1 }, { sparse: true });
+ApexRegistrationSchema.index({ in_game_id: 1 });
+ApexRegistrationSchema.index({ status: 1 });
+ApexRegistrationSchema.index({ tournament_id: 1, user_id: 1 }, { unique: true });
+ApexRegistrationSchema.index({ tournament_id: 1, in_game_id: 1 }, { unique: true });
+ApexRegistrationSchema.index({ tournament_id: 1, team_id: 1 }, { unique: true, sparse: true });
+ApexRegistrationSchema.index({ 'payment.transaction_id': 1 }, { sparse: true });
+ApexRegistrationSchema.index({ 'refund.status': 1 }, { sparse: true });
+
+
+
+export const Registration = mongoose.model<IApexRegistration>('ApexRegistration', ApexRegistrationSchema);

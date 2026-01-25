@@ -229,12 +229,159 @@ export interface IApexEscrowAccount extends Document {
   ];
 }
 
-/**
- * Indexes:
- * - tournament_id (unique)
- * - status
- * - processing_schedule.fee_deduction_time
- * - processing_schedule.cancellation_cutoff
- * - created_at
- * - Compound: status + processing_schedule.fee_deduction_time (for scheduled jobs)
- */
+const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
+  tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true, unique: true },
+  
+  organizer_deposit: {
+    deposited_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    gross_amount: { type: Number, default: 0 },
+    platform_fee: { type: Number, default: 0 },
+    net_prize_pool: { type: Number, default: 0 },
+    deposit_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    deposited_at: { type: Date },
+    platform_fee_status: { type: String, enum: ['pending', 'deducted', 'waived'], default: 'pending' },
+    platform_fee_deducted_at: { type: Date },
+    cancelled: { type: Boolean, default: false },
+    cancelled_at: { type: Date },
+    refund_amount: { type: Number, default: 0 },
+    refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    refunded_at: { type: Date }
+  },
+  
+  player_entries: {
+    total_collected: { type: Number, default: 0 },
+    total_players: { type: Number, default: 0 },
+    payments: [{
+      user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+      in_game_id: { type: String, required: true },
+      gross_amount: { type: Number, required: true },
+      platform_fee: { type: Number, required: true },
+      organizer_share: { type: Number, required: true },
+      payment_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction', required: true },
+      paid_at: { type: Date, required: true },
+      platform_fee_status: { type: String, enum: ['pending', 'deducted', 'waived'], default: 'pending' },
+      platform_fee_deducted_at: { type: Date },
+      organizer_share_status: { type: String, enum: ['pending', 'released', 'held'], default: 'pending' },
+      cancelled: { type: Boolean, default: false },
+      cancelled_at: { type: Date },
+      cancellation_type: { type: String, enum: ['player_early', 'organizer_cancelled', 'tournament_cancelled'] },
+      refund_amount: { type: Number, default: 0 },
+      refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+      refunded_at: { type: Date }
+    }]
+  },
+  
+  platform_revenue: {
+    total_collected: { type: Number, default: 0 },
+    from_organizer: { type: Number, default: 0 },
+    from_players: { type: Number, default: 0 },
+    fees_deducted: { type: Boolean, default: false },
+    collected_at: { type: Date },
+    withdrawal_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' }
+  },
+  
+  winner_submissions: {
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_at: { type: Date },
+    winners: [{
+      position: { type: Number, required: true },
+      in_game_id: { type: String, required: true },
+      matched_user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+      match_status: { type: String, enum: ['matched', 'not_found', 'not_registered'], default: 'not_found' },
+      prize_percentage: { type: Number, required: true },
+      prize_amount: { type: Number, required: true },
+      payout_status: { type: String, enum: ['allocated', 'processing', 'paid', 'failed'], default: 'allocated' },
+      payout_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+      paid_at: { type: Date },
+      failure_reason: { type: String },
+      retry_count: { type: Number, default: 0 }
+    }],
+    all_winners_verified: { type: Boolean, default: false },
+    total_prize_distributed: { type: Number, default: 0 }
+  },
+  
+  organizer_payout: {
+    total_earnings: { type: Number, default: 0 },
+    platform_fees_deducted: { type: Number, default: 0 },
+    net_amount: { type: Number, default: 0 },
+    status: { type: String, enum: ['pending', 'ready', 'processing', 'paid', 'held'], default: 'pending' },
+    released_at: { type: Date },
+    payout_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    paid_at: { type: Date },
+    failure_reason: { type: String },
+    retry_count: { type: Number, default: 0 }
+  },
+  
+  refund_log: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_type: { type: String, enum: ['player', 'organizer'], required: true },
+    reason: { type: String, enum: ['player_cancelled_early', 'organizer_cancelled_early', 'tournament_cancelled', 'system_refund'], required: true },
+    original_amount: { type: Number, required: true },
+    refund_amount: { type: Number, required: true },
+    platform_fee_kept: { type: Number, default: 0 },
+    refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction', required: true },
+    refunded_at: { type: Date, required: true }
+  }],
+  
+  processing_schedule: {
+    cancellation_cutoff: { type: Date },
+    fee_deduction_time: { type: Date },
+    tournament_start: { type: Date },
+    tournament_end: { type: Date },
+    past_cancellation_cutoff: { type: Boolean, default: false },
+    fees_deducted: { type: Boolean, default: false },
+    tournament_started: { type: Boolean, default: false },
+    winners_submitted: { type: Boolean, default: false },
+    prizes_distributed: { type: Boolean, default: false },
+    organizer_paid: { type: Boolean, default: false }
+  },
+  
+  accounting: {
+    total_inflow: { type: Number, default: 0 },
+    total_outflow: { type: Number, default: 0 },
+    platform_revenue: { type: Number, default: 0 },
+    balance: { type: Number, default: 0 },
+    verified: { type: Boolean, default: false },
+    verified_at: { type: Date },
+    verified_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    discrepancy_notes: { type: String }
+  },
+  
+  status: { 
+    type: String, 
+    enum: [
+      'awaiting_organizer_deposit', 'open', 'locked', 'processing_fees', 
+      'tournament_active', 'awaiting_results', 'verifying_winners', 
+      'distributing_prizes', 'distributing_organizer', 'completed', 
+      'cancelled', 'disputed'
+    ],
+    default: 'awaiting_organizer_deposit' 
+  },
+  
+  closed_at: { type: Date },
+  
+  version: { type: Number, default: 1 },
+  
+  audit_log: [{
+    action: { type: String, required: true },
+    performed_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    performed_at: { type: Date, default: Date.now },
+    details: { type: String },
+    previous_status: { type: String },
+    new_status: { type: String }
+  }]
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+EscrowAccountSchema.index({ tournament_id: 1 }, { unique: true });
+EscrowAccountSchema.index({ status: 1 });
+EscrowAccountSchema.index({ 'processing_schedule.fee_deduction_time': 1 });
+EscrowAccountSchema.index({ 'processing_schedule.cancellation_cutoff': 1 });
+EscrowAccountSchema.index({ created_at: -1 });
+EscrowAccountSchema.index({ status: 1, 'processing_schedule.fee_deduction_time': 1 });
+EscrowAccountSchema.index({ 'player_entries.payments.user_id': 1 });
+
+
+export const EscrowAccount = mongoose.model<IApexEscrowAccount>('EscrowAccount', EscrowAccountSchema);

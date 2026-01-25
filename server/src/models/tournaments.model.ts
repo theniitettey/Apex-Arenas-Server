@@ -1,6 +1,3 @@
-// ============================================================================
-// TOURNAMENTS.MODEL.TS - UPDATED VERSION
-// ============================================================================
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IApexTournament extends Document {
@@ -8,9 +5,7 @@ export interface IApexTournament extends Document {
   organizer_id: mongoose.Types.ObjectId;
   escrow_account_id?: mongoose.Types.ObjectId; // optional - null for free tournaments
   
-  // -------------------------------------------------------------------------
-  // BASIC INFORMATION
-  // -------------------------------------------------------------------------
+
   title: string;
   description: string;
   game_id: mongoose.Types.ObjectId;
@@ -21,9 +16,7 @@ export interface IApexTournament extends Document {
   // Free vs Paid tournament
   is_free: boolean; // true = no entry fee, no prize pool
   
-  // -------------------------------------------------------------------------
-  // SCHEDULE
-  // -------------------------------------------------------------------------
+
   schedule: {
     registration_start: Date;
     registration_end: Date;
@@ -37,9 +30,7 @@ export interface IApexTournament extends Document {
   
   timezone: string;
   
-  // -------------------------------------------------------------------------
-  // COMMUNICATION
-  // -------------------------------------------------------------------------
+ 
   communication: {
     discord_link?: string;
     whatsapp_link?: string;
@@ -47,10 +38,7 @@ export interface IApexTournament extends Document {
     contact_phone?: string;
     stream_url?: string; // if tournament is streamed
   };
-  
-  // -------------------------------------------------------------------------
-  // CAPACITY
-  // -------------------------------------------------------------------------
+
   capacity: {
     min_participants: number;
     max_participants: number;
@@ -60,15 +48,9 @@ export interface IApexTournament extends Document {
     waitlist_enabled: boolean;
   };
   
-  // -------------------------------------------------------------------------
-  // ENTRY FEE & CURRENCY (null/0 for free tournaments)
-  // -------------------------------------------------------------------------
   entry_fee: number;
   currency: string;
-  
-  // -------------------------------------------------------------------------
-  // PRIZE STRUCTURE (Organizer Defines This at Creation)
-  // -------------------------------------------------------------------------
+
   prize_structure: {
     organizer_gross_deposit: number; // What organizer pays upfront (e.g., GHS 5,050)
     platform_fee_percentage: number; // 1% from organizer
@@ -85,27 +67,21 @@ export interface IApexTournament extends Document {
     ];
   };
   
-  // -------------------------------------------------------------------------
-  // PLATFORM FEE FROM PLAYERS
-  // -------------------------------------------------------------------------
+
   player_platform_fee: {
     percentage: number; // 10%
     per_player_amount: number; // GHS 2 (10% of GHS 20)
     total_expected: number; // per_player_amount × current_participants
   };
   
-  // -------------------------------------------------------------------------
-  // ORGANIZER EARNINGS (From Player Entry Fees)
-  // -------------------------------------------------------------------------
+ 
   organizer_revenue: {
     per_player_share: number; // GHS 18 (90% of GHS 20 entry fee)
     total_expected: number; // per_player_share × current_participants
     release_timing: string; // 'after_tournament_completion' (fixed)
   };
   
-  // -------------------------------------------------------------------------
-  // BRACKET INFORMATION
-  // -------------------------------------------------------------------------
+
   bracket: {
     generated: boolean;
     generated_at?: Date;
@@ -114,9 +90,7 @@ export interface IApexTournament extends Document {
     bracket_url?: string; // link to visual bracket if external
   };
   
-  // -------------------------------------------------------------------------
-  // RULES & SETTINGS
-  // -------------------------------------------------------------------------
+
   rules: {
     description: string;
     map_pool: string[];
@@ -127,9 +101,6 @@ export interface IApexTournament extends Document {
     in_game_id_required: boolean; // Players must provide their in-game ID
   };
   
-  // -------------------------------------------------------------------------
-  // TOURNAMENT STATUS
-  // -------------------------------------------------------------------------
   status: string; 
   /* enum:
     'draft',                    // Organizer creating, not published
@@ -144,9 +115,7 @@ export interface IApexTournament extends Document {
     'cancelled'                 // Cancelled by organizer (>24hrs before start only)
   */
   
-  // -------------------------------------------------------------------------
-  // RESULTS & WINNERS (Submitted by Organizer)
-  // -------------------------------------------------------------------------
+ 
   results: {
     submitted_by: mongoose.Types.ObjectId; // Organizer who submitted
     submitted_at: Date;
@@ -164,21 +133,15 @@ export interface IApexTournament extends Document {
     verified_at: Date;
   };
   
-  // -------------------------------------------------------------------------
-  // VISIBILITY & REGION
-  // -------------------------------------------------------------------------
+
   visibility: string; // enum: ['public', 'private', 'invite_only']
   region: string; // e.g., 'GH', 'NA', 'EU', 'ASIA'
   
-  // -------------------------------------------------------------------------
-  // MEDIA
-  // -------------------------------------------------------------------------
+ 
   thumbnail_url: string;
   banner_url: string;
   
-  // -------------------------------------------------------------------------
-  // ANALYTICS & METADATA
-  // -------------------------------------------------------------------------
+ 
   metadata: {
     views: number;
     registrations_count: number; // Total who registered
@@ -187,9 +150,7 @@ export interface IApexTournament extends Document {
     completion_rate: number; // % of registered players who showed up
   };
   
-  // -------------------------------------------------------------------------
-  // CANCELLATION TRACKING
-  // -------------------------------------------------------------------------
+ 
   cancellation: {
     cancelled: boolean;
     cancelled_by: mongoose.Types.ObjectId; // Who cancelled (organizer or admin)
@@ -204,9 +165,6 @@ export interface IApexTournament extends Document {
     };
   };
   
-  // -------------------------------------------------------------------------
-  // REQUIREMENTS
-  // -------------------------------------------------------------------------
   requirements: {
     min_age?: number;
     max_age?: number;
@@ -217,9 +175,6 @@ export interface IApexTournament extends Document {
     max_team_size?: number;
   };
   
-  // -------------------------------------------------------------------------
-  // TIMESTAMPS
-  // -------------------------------------------------------------------------
   created_at: Date;
   updated_at: Date;
   published_at: Date;
@@ -227,16 +182,181 @@ export interface IApexTournament extends Document {
   completed_at: Date;
 }
 
-/**
- * Indexes:
- * - organizer_id
- * - game_id
- * - escrow_account_id (unique)
- * - status
- * - schedule.tournament_start
- * - schedule.registration_end
- * - schedule.cancellation_cutoff
- * - created_at
- * - region
- * - visibility
- */
+const ApexTournamentSchema = new Schema<IApexTournament>({
+  organizer_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  escrow_account_id: { type: Schema.Types.ObjectId, ref: 'EscrowAccount' },
+  
+  title: { type: String, required: true, trim: true, maxlength: 100 },
+  description: { type: String, maxlength: 2000 },
+  game_id: { type: Schema.Types.ObjectId, ref: 'Game', required: true },
+  
+  tournament_type: { 
+    type: String, 
+    enum: ['single_elimination', 'double_elimination', 'round_robin', 'swiss', 'battle_royale'],
+    required: true 
+  },
+  format: { 
+    type: String, 
+    enum: ['1v1', '2v2', '3v3', '4v4', '5v5', 'squad', 'solo'],
+    required: true 
+  },
+  
+  is_free: { type: Boolean, default: false },
+  
+  schedule: {
+    registration_start: { type: Date, required: true },
+    registration_end: { type: Date, required: true },
+    tournament_start: { type: Date, required: true },
+    tournament_end: { type: Date },
+    check_in_start: { type: Date },
+    check_in_end: { type: Date },
+    cancellation_cutoff: { type: Date },
+    fee_deduction_time: { type: Date }
+  },
+  
+  timezone: { type: String, default: 'Africa/Accra' },
+  
+  communication: {
+    discord_link: { type: String },
+    whatsapp_link: { type: String },
+    contact_email: { type: String },
+    contact_phone: { type: String },
+    stream_url: { type: String }
+  },
+  
+  capacity: {
+    min_participants: { type: Number, default: 2 },
+    max_participants: { type: Number, required: true },
+    current_participants: { type: Number, default: 0 },
+    checked_in_count: { type: Number, default: 0 },
+    waitlist_count: { type: Number, default: 0 },
+    waitlist_enabled: { type: Boolean, default: false }
+  },
+  
+  entry_fee: { type: Number, default: 0 },
+  currency: { type: String, default: 'GHS' },
+  
+  prize_structure: {
+    organizer_gross_deposit: { type: Number, default: 0 },
+    platform_fee_percentage: { type: Number, default: 1 },
+    platform_fee_amount: { type: Number, default: 0 },
+    net_prize_pool: { type: Number, default: 0 },
+    total_winning_positions: { type: Number, default: 1 },
+    distribution: [{
+      position: { type: Number, required: true },
+      percentage: { type: Number, required: true },
+      amount: { type: Number, default: 0 }
+    }]
+  },
+  
+  player_platform_fee: {
+    percentage: { type: Number, default: 10 },
+    per_player_amount: { type: Number, default: 0 },
+    total_expected: { type: Number, default: 0 }
+  },
+  
+  organizer_revenue: {
+    per_player_share: { type: Number, default: 0 },
+    total_expected: { type: Number, default: 0 },
+    release_timing: { type: String, default: 'after_tournament_completion' }
+  },
+  
+  bracket: {
+    generated: { type: Boolean, default: false },
+    generated_at: { type: Date },
+    total_rounds: { type: Number, default: 0 },
+    current_round: { type: Number, default: 0 },
+    bracket_url: { type: String }
+  },
+  
+  rules: {
+    description: { type: String, maxlength: 5000 },
+    map_pool: [{ type: String }],
+    game_mode: { type: String },
+    scoring_system: { type: String },
+    anti_cheat_required: { type: Boolean, default: false },
+    stream_required: { type: Boolean, default: false },
+    in_game_id_required: { type: Boolean, default: true }
+  },
+  
+  status: { 
+    type: String, 
+    enum: ['draft', 'awaiting_deposit', 'open', 'locked', 'ready_to_start', 'ongoing', 'awaiting_results', 'verifying_results', 'completed', 'cancelled'],
+    default: 'draft' 
+  },
+  
+  results: {
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_at: { type: Date },
+    winners: [{
+      position: { type: Number },
+      in_game_id: { type: String },
+      user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+      verified: { type: Boolean, default: false }
+    }],
+    verification_status: { type: String, enum: ['pending', 'verified', 'disputed'], default: 'pending' },
+    verified_at: { type: Date }
+  },
+  
+  visibility: { type: String, enum: ['public', 'private', 'invite_only'], default: 'public' },
+  region: { type: String, default: 'GH' },
+  
+  thumbnail_url: { type: String },
+  banner_url: { type: String },
+  
+  metadata: {
+    views: { type: Number, default: 0 },
+    registrations_count: { type: Number, default: 0 },
+    paid_registrations_count: { type: Number, default: 0 },
+    check_ins_count: { type: Number, default: 0 },
+    completion_rate: { type: Number, default: 0 }
+  },
+  
+  cancellation: {
+    cancelled: { type: Boolean, default: false },
+    cancelled_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    cancelled_at: { type: Date },
+    reason: { type: String },
+    refunds_processed: { type: Boolean, default: false },
+    refund_summary: {
+      players_refunded: { type: Number, default: 0 },
+      total_refunded_to_players: { type: Number, default: 0 },
+      organizer_refunded: { type: Number, default: 0 },
+      platform_fees_retained: { type: Number, default: 0 }
+    }
+  },
+  
+  requirements: {
+    min_age: { type: Number },
+    max_age: { type: Number },
+    allowed_regions: [{ type: String }],
+    required_skill_levels: [{ type: String }],
+    team_size: { type: Number },
+    min_team_size: { type: Number },
+    max_team_size: { type: Number }
+  },
+  
+  published_at: { type: Date },
+  started_at: { type: Date },
+  completed_at: { type: Date }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexTournamentSchema.index({ organizer_id: 1 });
+ApexTournamentSchema.index({ game_id: 1 });
+ApexTournamentSchema.index({ escrow_account_id: 1 }, { sparse: true });
+ApexTournamentSchema.index({ status: 1 });
+ApexTournamentSchema.index({ 'schedule.tournament_start': 1 });
+ApexTournamentSchema.index({ 'schedule.registration_end': 1 });
+ApexTournamentSchema.index({ 'schedule.cancellation_cutoff': 1 });
+ApexTournamentSchema.index({ created_at: -1 });
+ApexTournamentSchema.index({ region: 1 });
+ApexTournamentSchema.index({ visibility: 1 });
+ApexTournamentSchema.index({ is_free: 1 });
+ApexTournamentSchema.index({ status: 1, 'schedule.tournament_start': 1 });
+ApexTournamentSchema.index({ game_id: 1, status: 1, visibility: 1 });
+
+
+export const Tournament = mongoose.model<IApexTournament>('ApexTournament', ApexTournamentSchema);

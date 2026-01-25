@@ -59,13 +59,76 @@ export interface IApexGame extends Document {
   added_by?: mongoose.Types.ObjectId;
 }
 
-/**
- * Indexes:
- * - slug (unique)
- * - is_active
- * - is_featured
- * - category
- * - display_order
- * - Compound: is_active + category
- * - Compound: is_active + is_featured + display_order
- */
+
+
+const ApexGameSchema = new Schema<IApexGame>({
+  name: { type: String, required: true, trim: true },
+  slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  
+  category: { 
+    type: String, 
+    enum: ['fps', 'moba', 'sports', 'fighting', 'battle_royale', 'card', 'racing', 'other'],
+    required: true 
+  },
+  platform: [{ 
+    type: String, 
+    enum: ['pc', 'ps4', 'ps5', 'xbox', 'nintendo', 'mobile', 'cross_platform'] 
+  }],
+  
+  supported_formats: [{ type: String }],
+  default_format: { type: String },
+  supported_tournament_types: [{ 
+    type: String, 
+    enum: ['single_elimination', 'double_elimination', 'round_robin', 'swiss', 'battle_royale'] 
+  }],
+  
+  in_game_id_config: {
+    label: { type: String, required: true },
+    format: { type: String },
+    format_description: { type: String },
+    example: { type: String, required: true },
+    is_required: { type: Boolean, default: true },
+    case_sensitive: { type: Boolean, default: false }
+  },
+  
+  logo_url: { type: String, default: '' },
+  banner_url: { type: String, default: '' },
+  icon_url: { type: String },
+  
+  default_rules: {
+    maps: [{ type: String }],
+    game_modes: [{ type: String }],
+    match_duration: { type: Number },
+    default_best_of: { type: Number, default: 1 }
+  },
+  
+  publisher: { type: String },
+  release_year: { type: Number },
+  official_website: { type: String },
+  
+  stats: {
+    tournaments_hosted: { type: Number, default: 0 },
+    total_players: { type: Number, default: 0 },
+    active_tournaments: { type: Number, default: 0 },
+    total_prize_distributed: { type: Number, default: 0 }
+  },
+  
+  is_active: { type: Boolean, default: true },
+  is_featured: { type: Boolean, default: false },
+  display_order: { type: Number, default: 0 },
+  
+  added_by: { type: Schema.Types.ObjectId, ref: 'User' }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexGameSchema.index({ slug: 1 }, { unique: true });
+ApexGameSchema.index({ is_active: 1 });
+ApexGameSchema.index({ is_featured: 1 });
+ApexGameSchema.index({ category: 1 });
+ApexGameSchema.index({ display_order: 1 });
+ApexGameSchema.index({ is_active: 1, category: 1 });
+ApexGameSchema.index({ is_active: 1, is_featured: 1, display_order: 1 });
+
+export const Game = mongoose.model<IApexGame>('ApexGame', ApexGameSchema);

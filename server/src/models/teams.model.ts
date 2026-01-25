@@ -80,14 +80,85 @@ export interface IApexTeam extends Document {
   is_active: boolean;
 }
 
-/**
- * Indexes:
- * - Compound: name + game_id (unique) - team names unique per game
- * - captain_id
- * - game_id
- * - members.user_id
- * - invitations.user_id
- * - join_requests.user_id
- * - is_active
- * - settings.is_recruiting
- */
+const ApexTeamSchema = new Schema<IApexTeam>({
+  name: { type: String, required: true, trim: true, maxlength: 50 },
+  tag: { type: String, required: true, trim: true, maxlength: 10, uppercase: true },
+  captain_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  game_id: { type: Schema.Types.ObjectId, ref: 'Game', required: true },
+  
+  description: { type: String, maxlength: 500 },
+  logo_url: { type: String, default: '' },
+  banner_url: { type: String },
+  
+  social_links: {
+    discord: { type: String },
+    twitter: { type: String },
+    youtube: { type: String },
+    website: { type: String }
+  },
+  
+  members: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    in_game_id: { type: String, required: true },
+    role: { type: String, enum: ['captain', 'player', 'substitute'], default: 'player' },
+    position: { type: String },
+    joined_at: { type: Date, default: Date.now },
+    status: { type: String, enum: ['active', 'inactive', 'kicked'], default: 'active' }
+  }],
+  
+  invitations: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    invited_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    invited_at: { type: Date, default: Date.now },
+    expires_at: { type: Date, required: true },
+    status: { type: String, enum: ['pending', 'accepted', 'declined', 'expired'], default: 'pending' }
+  }],
+  
+  join_requests: [{
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    message: { type: String, maxlength: 300 },
+    requested_at: { type: Date, default: Date.now },
+    status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
+    reviewed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewed_at: { type: Date }
+  }],
+  
+  max_size: { type: Number, default: 10 },
+  min_size: { type: Number, default: 1 },
+  
+  settings: {
+    is_recruiting: { type: Boolean, default: false },
+    auto_accept_invites: { type: Boolean, default: false },
+    visibility: { type: String, enum: ['public', 'private'], default: 'public' }
+  },
+  
+  stats: {
+    tournaments_played: { type: Number, default: 0 },
+    tournaments_won: { type: Number, default: 0 },
+    win_rate: { type: Number, default: 0 },
+    total_earnings: { type: Number, default: 0 },
+    matches_played: { type: Number, default: 0 },
+    matches_won: { type: Number, default: 0 }
+  },
+  
+  region: { type: String },
+  
+  disbanded_at: { type: Date },
+  is_active: { type: Boolean, default: true }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexTeamSchema.index({ name: 1, game_id: 1 }, { unique: true });
+ApexTeamSchema.index({ captain_id: 1 });
+ApexTeamSchema.index({ game_id: 1 });
+ApexTeamSchema.index({ 'members.user_id': 1 });
+ApexTeamSchema.index({ 'invitations.user_id': 1 });
+ApexTeamSchema.index({ 'join_requests.user_id': 1 });
+ApexTeamSchema.index({ is_active: 1 });
+ApexTeamSchema.index({ 'settings.is_recruiting': 1 });
+ApexTeamSchema.index({ game_id: 1, is_active: 1, 'settings.is_recruiting': 1 });
+
+
+export const Team = mongoose.model<IApexTeam>('ApexTeam', ApexTeamSchema);
