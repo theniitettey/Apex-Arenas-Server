@@ -5,18 +5,21 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IApexTournament extends Document {
   _id: mongoose.Types.ObjectId;
-  organizer_id: mongoose.Types.ObjectId; // reference to users
-  escrow_account_id: mongoose.Types.ObjectId; // reference to escrow_accounts
+  organizer_id: mongoose.Types.ObjectId;
+  escrow_account_id?: mongoose.Types.ObjectId; // optional - null for free tournaments
   
   // -------------------------------------------------------------------------
   // BASIC INFORMATION
   // -------------------------------------------------------------------------
-  title: string; // required
+  title: string;
   description: string;
-  game_id: mongoose.Types.ObjectId; // reference to games collection
+  game_id: mongoose.Types.ObjectId;
   
-  tournament_type: string; // enum: ['single_elimination', 'double_elimination', 'round_robin', 'battle_royale']
-  format: string; // enum: ['1v1', '2v2', '5v5', 'squad', 'solo']
+  tournament_type: string;
+  format: string;
+  
+  // Free vs Paid tournament
+  is_free: boolean; // true = no entry fee, no prize pool
   
   // -------------------------------------------------------------------------
   // SCHEDULE
@@ -28,13 +31,22 @@ export interface IApexTournament extends Document {
     tournament_end: Date;
     check_in_start: Date;
     check_in_end: Date;
-    
-    // Auto-calculated critical timestamps
-    cancellation_cutoff: Date; // 24 hours before tournament_start
-    fee_deduction_time: Date; // 1 hour before tournament_start
+    cancellation_cutoff: Date;
+    fee_deduction_time: Date;
   };
   
-  timezone: string; // e.g., 'Africa/Accra' - for display purposes, all dates stored in UTC
+  timezone: string;
+  
+  // -------------------------------------------------------------------------
+  // COMMUNICATION
+  // -------------------------------------------------------------------------
+  communication: {
+    discord_link?: string;
+    whatsapp_link?: string;
+    contact_email?: string;
+    contact_phone?: string;
+    stream_url?: string; // if tournament is streamed
+  };
   
   // -------------------------------------------------------------------------
   // CAPACITY
@@ -42,15 +54,17 @@ export interface IApexTournament extends Document {
   capacity: {
     min_participants: number;
     max_participants: number;
-    current_participants: number; // Count of paid & registered players
+    current_participants: number;
     checked_in_count: number;
+    waitlist_count: number; // players on waitlist
+    waitlist_enabled: boolean;
   };
   
   // -------------------------------------------------------------------------
-  // ENTRY FEE & CURRENCY
+  // ENTRY FEE & CURRENCY (null/0 for free tournaments)
   // -------------------------------------------------------------------------
-  entry_fee: number; // required (e.g., GHS 20)
-  currency: string; // default: 'GHS'
+  entry_fee: number;
+  currency: string;
   
   // -------------------------------------------------------------------------
   // PRIZE STRUCTURE (Organizer Defines This at Creation)
@@ -87,6 +101,17 @@ export interface IApexTournament extends Document {
     per_player_share: number; // GHS 18 (90% of GHS 20 entry fee)
     total_expected: number; // per_player_share × current_participants
     release_timing: string; // 'after_tournament_completion' (fixed)
+  };
+  
+  // -------------------------------------------------------------------------
+  // BRACKET INFORMATION
+  // -------------------------------------------------------------------------
+  bracket: {
+    generated: boolean;
+    generated_at?: Date;
+    total_rounds: number;
+    current_round: number;
+    bracket_url?: string; // link to visual bracket if external
   };
   
   // -------------------------------------------------------------------------
@@ -177,6 +202,19 @@ export interface IApexTournament extends Document {
       organizer_refunded: number;
       platform_fees_retained: number;
     };
+  };
+  
+  // -------------------------------------------------------------------------
+  // REQUIREMENTS
+  // -------------------------------------------------------------------------
+  requirements: {
+    min_age?: number;
+    max_age?: number;
+    allowed_regions: string[]; // empty = all regions allowed
+    required_skill_levels: string[]; // empty = all skill levels
+    team_size?: number; // for team formats
+    min_team_size?: number;
+    max_team_size?: number;
   };
   
   // -------------------------------------------------------------------------

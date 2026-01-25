@@ -7,9 +7,14 @@ export interface IApexTransaction extends Document {
   idempotency_key: string; // unique key to prevent duplicate transactions
   
   type: string; // enum: ['deposit', 'entry_fee', 'prize_won', 'payout_approved', 'payout_completed', 'refund', 'platform_fee']
+  direction: string; // enum: ['credit', 'debit'] - money in or out
   
   amount: number; // store as pesewas (integers) to avoid floating-point issues
   currency: string;
+  
+  // Balance snapshot for audit trail
+  balance_before: number;
+  balance_after: number;
   
   status: string; // enum: ['pending', 'processing', 'completed', 'failed', 'cancelled']
   
@@ -22,6 +27,7 @@ export interface IApexTransaction extends Document {
     payment_method: string; // enum: ['wallet', 'momo', 'card', 'paypal', 'bank_transfer']
     payment_gateway: string; // e.g., 'paystack', 'flutterwave', 'stripe'
     gateway_transaction_id: string;
+    gateway_response?: string; // raw response from gateway for debugging
     gateway_fee: number;
     momo_network?: string; // enum: ['MTN', 'Vodafone', 'AirtelTigo']
     momo_number?: string;
@@ -33,10 +39,21 @@ export interface IApexTransaction extends Document {
     released_to: mongoose.Types.ObjectId;
   };
   
+  // Retry handling for failed transactions
+  retry: {
+    attempts: number;
+    max_attempts: number; // default: 3
+    last_attempt_at?: Date;
+    next_retry_at?: Date;
+    retry_reason?: string;
+  };
+  
   metadata: {
     description: string;
     notes: string;
     admin_notes: string;
+    ip_address?: string; // for fraud detection
+    user_agent?: string;
   };
   
   version: number; // for optimistic locking / audit trail
@@ -44,6 +61,8 @@ export interface IApexTransaction extends Document {
   created_at: Date;
   updated_at: Date;
   completed_at: Date;
+  failed_at?: Date;
+  failure_reason?: string;
 }
 
 /**
@@ -51,8 +70,10 @@ export interface IApexTransaction extends Document {
  * - idempotency_key (unique)
  * - user_id
  * - type
+ * - direction
  * - status
  * - created_at
  * - related_to.entity_id
  * - Compound: user_id + type + status
+ * - Compound: user_id + created_at (for transaction history)
  */

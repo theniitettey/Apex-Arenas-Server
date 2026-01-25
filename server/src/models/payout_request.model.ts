@@ -28,6 +28,10 @@ export interface IApexPayoutRequest extends Document {
   // Approval workflow
   status: string; // enum: ['pending', 'under_review', 'approved', 'processing', 'completed', 'rejected', 'cancelled']
   
+  // Request can expire if not processed in time
+  expires_at?: Date;
+  is_expired: boolean;
+  
   admin_review: {
     reviewed_by?: mongoose.Types.ObjectId; // admin user_id
     reviewed_at?: Date;
@@ -53,6 +57,8 @@ export interface IApexPayoutRequest extends Document {
     momo_status?: string; // enum: ['pending', 'successful', 'failed']
     failure_reason?: string;
     completed_at?: Date;
+    retry_count: number;
+    last_retry_at?: Date;
   };
   
   // Platform fees (if applicable)
@@ -61,6 +67,14 @@ export interface IApexPayoutRequest extends Document {
     processing_fee: number;
     total_fees: number;
     net_amount: number; // amount - total_fees
+  };
+  
+  // Cancellation
+  cancellation?: {
+    cancelled: boolean;
+    cancelled_by?: mongoose.Types.ObjectId; // user or admin
+    cancelled_at?: Date;
+    reason?: string;
   };
   
   notes?: string; // user notes/reason for withdrawal
