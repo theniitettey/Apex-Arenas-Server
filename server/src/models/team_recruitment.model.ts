@@ -1,4 +1,3 @@
-
 import mongoose, {Document, Schema} from "mongoose";
 
 export interface IApexTeamRecruitment extends Document {
@@ -27,6 +26,7 @@ export interface IApexTeamRecruitment extends Document {
   minimum_age?: number,
   microphone_required: boolean,
   language_requirements: string[],
+  region?: string, // e.g., 'GH', 'NG', 'KE'
   
   // Post details
   title: string,
@@ -37,8 +37,22 @@ export interface IApexTeamRecruitment extends Document {
   // Status
   status: string, // enum: ['open', 'filled', 'closed', 'expired']
   applicants: mongoose.Types.ObjectId[], // Users who applied
+  applicant_count: number,
+  
+  // Views for analytics
+  views: number,
   
   created_at: Date,
   updated_at: Date,
   expires_at: Date // Auto-close after 30 days
 }
+
+/**
+ * Indexes:
+ * - posted_by
+ * - game_id
+ * - status
+ * - posting_as
+ * - expires_at
+ * - Compound: game_id + status + posting_as (for filtered searches)
+ */

@@ -211,6 +211,22 @@ export interface IApexEscrowAccount extends Document {
   created_at: Date;
   updated_at: Date;
   closed_at: Date; // When status = 'completed' or 'cancelled'
+
+  // -------------------------------------------------------------------------
+  // AUDIT & VERSION CONTROL
+  // -------------------------------------------------------------------------
+  version: number; // incremented on every update for optimistic locking
+  
+  audit_log: [
+    {
+      action: string; // e.g., 'deposit_received', 'player_registered', 'refund_issued', 'prize_distributed'
+      performed_by: mongoose.Types.ObjectId; // user who triggered the action
+      performed_at: Date;
+      details: string; // JSON string of relevant data
+      previous_status: string;
+      new_status: string;
+    }
+  ];
 }
 
 /**
@@ -220,4 +236,5 @@ export interface IApexEscrowAccount extends Document {
  * - processing_schedule.fee_deduction_time
  * - processing_schedule.cancellation_cutoff
  * - created_at
+ * - Compound: status + processing_schedule.fee_deduction_time (for scheduled jobs)
  */

@@ -34,6 +34,8 @@ export interface IApexTournament extends Document {
     fee_deduction_time: Date; // 1 hour before tournament_start
   };
   
+  timezone: string; // e.g., 'Africa/Accra' - for display purposes, all dates stored in UTC
+  
   // -------------------------------------------------------------------------
   // CAPACITY
   // -------------------------------------------------------------------------

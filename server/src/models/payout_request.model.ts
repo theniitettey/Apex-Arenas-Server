@@ -1,80 +1,85 @@
 import mongoose, {Document, Schema, Model} from "mongoose";
 
 export interface IApexPayoutRequest extends Document {
-  _id: mongoose.Types.ObjectId,
-  user_id: mongoose.Types.ObjectId,
+  _id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
   
-  request_type: String, // enum: ['tournament_winnings', 'wallet_withdrawal']
+  idempotency_key: string; // unique key to prevent duplicate payout requests
   
-  amount: Number, // amount user wants to withdraw
-  currency: String, // 'GHS'
+  request_type: string; // enum: ['tournament_winnings', 'wallet_withdrawal']
+  
+  amount: number; // store as pesewas
+  currency: string; // 'GHS'
   
   // Source of funds
   source: {
-    type: String, // 'tournament_winnings'
-    tournament_id: mongoose.Types.ObjectId, // if from specific tournament
-    position: Number // 1st, 2nd, 3rd place
-  },
+    type: string; // 'tournament_winnings'
+    tournament_id?: mongoose.Types.ObjectId; // if from specific tournament
+    position?: number; // 1st, 2nd, 3rd place
+  };
   
   // Mobile Money payout details
   payout_details: {
-    momo_number: String, // recipient mobile money number
-    network: String, // enum: ['MTN', 'Vodafone', 'AirtelTigo']
-    account_name: String // name on MoMo account
-  },
+    momo_number: string; // recipient mobile money number
+    network: string; // enum: ['MTN', 'Vodafone', 'AirtelTigo']
+    account_name: string; // name on MoMo account
+  };
   
   // Approval workflow
-  status: String, // enum: ['pending', 'under_review', 'approved', 'processing', 'completed', 'rejected', 'cancelled']
+  status: string; // enum: ['pending', 'under_review', 'approved', 'processing', 'completed', 'rejected', 'cancelled']
   
   admin_review: {
-    reviewed_by: mongoose.Types.ObjectId, // admin user_id
-    reviewed_at: Date,
-    review_notes: String,
-    approved: Boolean,
-    rejection_reason: String
-  },
+    reviewed_by?: mongoose.Types.ObjectId; // admin user_id
+    reviewed_at?: Date;
+    review_notes?: string;
+    approved?: boolean;
+    rejection_reason?: string;
+  };
   
   // Dispute check
   dispute_check: {
-    has_active_disputes: Boolean,
-    dispute_ids: [mongoose.Types.ObjectId], // references to match disputes
-    checked_at: Date
-  },
+    has_active_disputes: boolean;
+    dispute_ids: mongoose.Types.ObjectId[]; // references to match disputes
+    checked_at?: Date;
+  };
   
   // Transaction tracking
-  transaction_id: mongoose.Types.ObjectId, // reference to transactions (created after approval)
+  transaction_id?: mongoose.Types.ObjectId; // reference to transactions (created after approval)
   
   // Processing details
   processing: {
-    initiated_at: Date,
-    momo_transaction_ref: String, // MoMo API transaction reference
-    momo_status: String, // enum: ['pending', 'successful', 'failed']
-    failure_reason: String,
-    completed_at: Date
-  },
+    initiated_at?: Date;
+    momo_transaction_ref?: string; // MoMo API transaction reference
+    momo_status?: string; // enum: ['pending', 'successful', 'failed']
+    failure_reason?: string;
+    completed_at?: Date;
+  };
   
   // Platform fees (if applicable)
   fees: {
-    platform_fee: Number,
-    processing_fee: Number,
-    total_fees: Number,
-    net_amount: Number // amount - total_fees
-  },
+    platform_fee: number;
+    processing_fee: number;
+    total_fees: number;
+    net_amount: number; // amount - total_fees
+  };
   
-  notes: String, // user notes/reason for withdrawal
-  admin_notes: String, // internal admin notes
+  notes?: string; // user notes/reason for withdrawal
+  admin_notes?: string; // internal admin notes
   
-  created_at: Date,
-  updated_at: Date,
-  approved_at: Date,
-  completed_at: Date
+  version: number; // for optimistic locking / audit trail
+  
+  created_at: Date;
+  updated_at: Date;
+  approved_at?: Date;
+  completed_at?: Date;
 }
 
-
 /**
- * user_id
-status
-source.tournament_id
-created_at
-Compound: user_id + status
+ * Indexes:
+ * - idempotency_key (unique)
+ * - user_id
+ * - status
+ * - source.tournament_id
+ * - created_at
+ * - Compound: user_id + status
  */

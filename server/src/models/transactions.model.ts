@@ -1,49 +1,58 @@
 import mongoose, {Document, Schema, Model} from "mongoose";
 
 export interface IApexTransaction extends Document {
-  _id: mongoose.Types.ObjectId,
-  user_id: mongoose.Types.ObjectId,
+  _id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
   
-  type: String, // enum: ['deposit', 'entry_fee', 'prize_won', 'payout_approved', 'payout_completed', 'refund', 'platform_fee']
+  idempotency_key: string; // unique key to prevent duplicate transactions
   
-  amount: Number,
-  currency: String,
+  type: string; // enum: ['deposit', 'entry_fee', 'prize_won', 'payout_approved', 'payout_completed', 'refund', 'platform_fee']
   
-  status: String, // enum: ['pending', 'processing', 'completed', 'failed', 'cancelled']
+  amount: number; // store as pesewas (integers) to avoid floating-point issues
+  currency: string;
+  
+  status: string; // enum: ['pending', 'processing', 'completed', 'failed', 'cancelled']
   
   related_to: {
-    entity_type: String, // enum: ['tournament', 'match', 'payout_request']
-    entity_id: mongoose.Types.ObjectId
-  },
+    entity_type: string; // enum: ['tournament', 'match', 'payout_request', 'escrow']
+    entity_id: mongoose.Types.ObjectId;
+  };
   
   payment_details: {
-    payment_method: String, // enum: ['wallet', 'card', 'paypal', 'bank_transfer']
-    payment_gateway: String, // e.g., 'stripe', 'paypal'
-    gateway_transaction_id: String,
-    gateway_fee: Number
-  },
+    payment_method: string; // enum: ['wallet', 'momo', 'card', 'paypal', 'bank_transfer']
+    payment_gateway: string; // e.g., 'paystack', 'flutterwave', 'stripe'
+    gateway_transaction_id: string;
+    gateway_fee: number;
+    momo_network?: string; // enum: ['MTN', 'Vodafone', 'AirtelTigo']
+    momo_number?: string;
+  };
   
   escrow: {
-    is_escrowed: Boolean,
-    released_at: Date,
-    released_to: mongoose.Types.ObjectId
-  },
+    is_escrowed: boolean;
+    released_at: Date;
+    released_to: mongoose.Types.ObjectId;
+  };
   
   metadata: {
-    description: String,
-    notes: String,
-    admin_notes: String
-  },
+    description: string;
+    notes: string;
+    admin_notes: string;
+  };
   
-  created_at: Date,
-  updated_at: Date,
-  completed_at: Date
+  version: number; // for optimistic locking / audit trail
+  
+  created_at: Date;
+  updated_at: Date;
+  completed_at: Date;
 }
 
 /**
- * user_id
-type
-status
-created_at
-related_to.entity_id
+ * Indexes:
+ * - idempotency_key (unique)
+ * - user_id
+ * - type
+ * - status
+ * - created_at
+ * - related_to.entity_id
+ * - Compound: user_id + type + status
  */

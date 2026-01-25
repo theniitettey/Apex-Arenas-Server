@@ -1,39 +1,45 @@
 import mongoose, {Document, Schema, Model} from "mongoose";
 
 export interface IApexRegistration extends Document {
-  _id: mongoose.Types.ObjectId,
-  tournament_id: mongoose.Types.ObjectId, // reference to tournaments
-  user_id: mongoose.Types.ObjectId, // reference to users
-  team_id: mongoose.Types.ObjectId, // reference to teams (if team tournament, otherwise null)
+  _id: mongoose.Types.ObjectId;
+  tournament_id: mongoose.Types.ObjectId; // reference to tournaments
+  user_id: mongoose.Types.ObjectId; // reference to users
+  team_id?: mongoose.Types.ObjectId; // reference to teams (optional - only for team tournaments)
   
-  registration_type: String, // enum: ['solo', 'team']
+  registration_type: string; // enum: ['solo', 'team']
+  
+  // Player's in-game identifier - CRITICAL for winner verification
+  in_game_id: string; // must match user's game_profiles entry for tournament's game
   
   payment: {
-    entry_fee_paid: Number,
-    payment_method: String, // enum: ['wallet', 'card', 'paypal']
-    transaction_id: mongoose.Types.ObjectId, // reference to transactions
-    paid_at: Date
-  },
+    entry_fee_paid: number; // store as pesewas
+    payment_method: string; // enum: ['wallet', 'momo', 'card']
+    transaction_id: mongoose.Types.ObjectId; // reference to transactions
+    paid_at: Date;
+  };
   
-  status: String, // enum: ['pending_payment', 'registered', 'checked_in', 'disqualified', 'withdrawn', 'cancelled']
+  status: string; // enum: ['pending_payment', 'registered', 'checked_in', 'disqualified', 'withdrawn', 'cancelled']
   
   check_in: {
-    checked_in: Boolean,
-    checked_in_at: Date
-  },
+    checked_in: boolean;
+    checked_in_at: Date;
+  };
   
-  seed_number: Number, // tournament bracket position
+  seed_number: number; // tournament bracket position
   
-  registered_at: Date,
-  updated_at: Date,
-  withdrawn_at: Date,
-  withdrawal_reason: String
+  created_at: Date; // standardized from registered_at
+  updated_at: Date;
+  withdrawn_at: Date;
+  withdrawal_reason: string;
 }
 
-
 /**
- * tournament_id
-user_id
-status
-Compound: tournament_id + user_id (unique)
+ * Indexes:
+ * - tournament_id
+ * - user_id
+ * - in_game_id
+ * - status
+ * - Compound: tournament_id + user_id (unique)
+ * - Compound: tournament_id + in_game_id (unique per tournament)
+ * - payment.transaction_id
  */

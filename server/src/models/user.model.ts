@@ -1,70 +1,61 @@
 import mongoose, {Document, Schema, Model} from 'mongoose';
 
 export interface IApexUser extends Document {
-  _id: mongoose.Types.ObjectId,
-  email: String, // unique, required
-  username: String, // unique, required
-  password_hash: String, // hashed password
-  role: String, // enum: ['player', 'organizer', 'admin']
+  _id: mongoose.Types.ObjectId;
+  email: string; // unique, required
+  username: string; // unique, required
+  password_hash: string; // hashed password
+  role: string; // enum: ['player', 'organizer', 'admin']
   profile: {
-    first_name: String,
-    last_name: String,
-    avatar_url: String,
-    country: String,
-    date_of_birth: Date,
-    phone_number: String
-  },
+    first_name: string;
+    last_name: string;
+    avatar_url: string;
+    country: string;
+    date_of_birth: Date;
+    phone_number: string;
+  };
   game_profiles: [
     {
-      game_id: mongoose.Types.ObjectId, // reference to games collection
-      game_username: String,
-      game_id_number: String,
-      skill_level: String, // enum: ['beginner', 'intermediate', 'advanced', 'pro']
-      rank: String
+      game_id: mongoose.Types.ObjectId; // reference to games collection
+      in_game_id: string; // standardized name for in-game identifier
+      skill_level: string; // enum: ['beginner', 'intermediate', 'advanced', 'pro']
+      rank: string;
     }
-  ],
+  ];
   wallet: {
-    available_balance: Number, // funds available for withdrawal (decimal128 recommended)
-    pending_balance: Number, // winnings pending admin approval
-    total_balance: Number, // available + pending
-    currency: String, // default: 'GHS' (Ghana Cedis)
-    escrow_locked: Number // funds locked in active tournaments (entry fees)
-  },
+    available_balance: number; // funds available for withdrawal (store as pesewas/integers)
+    pending_balance: number; // winnings pending admin approval
+    total_balance: number; // available + pending
+    currency: string; // default: 'GHS' (Ghana Cedis)
+    escrow_locked: number; // funds locked in active tournaments (entry fees)
+  };
   momo_account: {
-    phone_number: String, // Mobile Money number for payouts
-    network: String, // enum: ['MTN', 'Vodafone', 'AirtelTigo']
-    account_name: String, // Name registered on MoMo
-    is_verified: Boolean,
-    verified_at: Date
-  },
+    phone_number: string; // Mobile Money number for payouts
+    network: string; // enum: ['MTN', 'Vodafone', 'AirtelTigo']
+    account_name: string; // Name registered on MoMo
+    is_verified: boolean;
+    verified_at: Date;
+  };
   stats: {
-    tournaments_played: Number,
-    tournaments_won: Number,
-    total_earnings: Number,
-    win_rate: Number
-  },
+    tournaments_played: number;
+    tournaments_won: number;
+    total_earnings: number;
+    win_rate: number;
+  };
   verification_status: {
-    email_verified: Boolean,
-    phone_verified: Boolean,
-    identity_verified: Boolean,
-    verified_at: Date
-  },
-  reports_submitted: [
-    {
-      type: String, // 'bug', 'suggestion', 'feedback'
-      title: String,
-      description: String,
-      submitted_at: Date,
-      status: String // 'pending', 'reviewed', 'resolved'
-    }
-  ],
-  created_at: Date,
-  updated_at: Date,
-  last_login: Date,
-  is_active: Boolean,
-  is_banned: Boolean,
-  banned_reason: String,
-  banned_until: Date
+    email_verified: boolean;
+    phone_verified: boolean;
+    identity_verified: boolean;
+    organizer_verified: boolean; // verified organizers can create paid tournaments
+    verified_at: Date;
+  };
+  created_at: Date;
+  updated_at: Date;
+  last_login: Date;
+  is_active: boolean;
+  is_banned: boolean;
+  banned_reason: string;
+  banned_until: Date;
 }
 
 // Indexes
@@ -72,3 +63,5 @@ export interface IApexUser extends Document {
 // username (unique)
 // role
 // created_at
+// game_profiles.game_id
+// game_profiles.in_game_id
