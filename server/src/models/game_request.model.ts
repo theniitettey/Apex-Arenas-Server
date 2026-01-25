@@ -50,12 +50,67 @@ export interface IApexGameRequest extends Document {
   reviewed_at?: Date;
 }
 
-/**
- * Indexes:
- * - requester_id
- * - slug (for duplicate detection)
- * - status
- * - upvotes (descending - show most requested first)
- * - created_at
- * - Compound: status + upvotes (for admin dashboard sorting)
- */
+const ApexGameRequestSchema = new Schema<IApexGameRequest>({
+  requester_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  
+  game_name: { type: String, required: true, trim: true, maxlength: 100 },
+  slug: { type: String, required: true, lowercase: true, trim: true },
+  category: { 
+    type: String, 
+    enum: ['fps', 'moba', 'sports', 'fighting', 'battle_royale', 'card', 'racing', 'other'],
+    required: true 
+  },
+  platform: [{ 
+    type: String, 
+    enum: ['pc', 'ps4', 'ps5', 'xbox', 'nintendo', 'mobile', 'cross_platform'] 
+  }],
+  
+  reason: { type: String, required: true, maxlength: 1000 },
+  estimated_players: { type: Number, min: 0 },
+  
+  upvotes: { type: Number, default: 0 },
+  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  
+  status: { 
+    type: String, 
+    enum: ['pending', 'under_review', 'approved', 'rejected', 'duplicate'],
+    default: 'pending' 
+  },
+  
+  duplicate_of: { type: Schema.Types.ObjectId },
+  
+  admin_review: {
+    reviewed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewed_at: { type: Date },
+    review_notes: { type: String, maxlength: 1000 },
+    rejection_reason: { type: String, maxlength: 500 }
+  },
+  
+  approved_game_id: { type: Schema.Types.ObjectId, ref: 'Game' },
+  
+  references: {
+    website_url: { type: String },
+    popularity_proof: { type: String }
+  },
+  
+  priority: { 
+    type: String, 
+    enum: ['low', 'medium', 'high'],
+    default: 'low' 
+  },
+  
+  reviewed_at: { type: Date }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Indexes
+ApexGameRequestSchema.index({ requester_id: 1 });
+ApexGameRequestSchema.index({ slug: 1 });
+ApexGameRequestSchema.index({ status: 1 });
+ApexGameRequestSchema.index({ upvotes: -1 });
+ApexGameRequestSchema.index({ created_at: -1 });
+ApexGameRequestSchema.index({ status: 1, upvotes: -1 });
+ApexGameRequestSchema.index({ status: 1, priority: -1, upvotes: -1 });
+
+export const GameRequest = mongoose.model<IApexGameRequest>('ApexGameRequest', ApexGameRequestSchema);
