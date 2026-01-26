@@ -22,15 +22,16 @@ export const env = cleanEnv(process.env, {
   MONGODB_CONNECTION_TIMEOUT: num({ default: 30000 }),
 
   // Redis Configs
+  REDIS_URL: str(),
   REDIS_HOST: str({ default: 'localhost' }),
   REDIS_PORT: num({ default: 6379 }),
   REDIS_PASSWORD: str({ default: '' }),
   REDIS_DB: num({ default: 0 }),
   REDIS_TTL_OTP: num({ default: 600 }), // 10m
   REDIS_TTL_SESSION: num({ default: 86400 }), // 24h
-  REDIS_URL: str(),
   REDIS_TLS: bool({ default: false }),
   IDEMPOTENCY_KEY_TTL: num({ default: 3600 }),
+  LOCKOUT_WINDOW_MINUTES: num({ default: 900 }), 
 
 
   // JWT & Security Configs
@@ -57,6 +58,7 @@ export const env = cleanEnv(process.env, {
   RATE_LIMIT_WINDOW: num({ default: 900000 }), // 15m
   RATE_LIMIT_MAX_ATTEMPTS: num({ default: 100 }),
   OTP_RATE_LIMIT_MAX: num({ default: 5 }),
+  OTP_COOLDOWN_SECONDS: num({ default: 60 }),
 
   // Logging.
   LOG_LEVEL: str({ choices: ['error', 'warn', 'info', 'debug'], default: 'info' }),
