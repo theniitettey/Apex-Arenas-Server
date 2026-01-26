@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { createLogger } from '../shared/utils/logger.utils';
 import { env } from "./env.config"
 
-const logger = createLogger('database.config');
+const logger = createLogger('database-config');
 
 class DatabaseManager {
   private static instance: DatabaseManager;

@@ -3,7 +3,7 @@ import {cleanEnv, str, num, bool} from 'envalid';
 import { createLogger } from '../shared/utils/logger.utils';
 
 
-const logger = createLogger('env.config');
+const logger = createLogger('env-config');
 
 dotenv.config();
 
@@ -36,9 +36,13 @@ export const env = cleanEnv(process.env, {
   // JWT & Security Configs
   JWT_ACCESS_SECRET: str(),
   JWT_REFRESH_SECRET: str(),
+  JWT_ADMIN_ACCESS_SECRET: str(),
+  JWT_ADMIN_REFRESH_SECRET: str(),
   JWT_ACCESS_EXPIRES_IN: num({default: 900}),
+  JWT_ADMIN_ACCESS_EXPIRES_IN: num({default: 600}),
   JWT_REFRESH_EXPIRES_IN: str({ default: '7d' }),
-  JWT_ISSUER: str({ default: 'apex_auth_service' }),
+  JWT_ISSUER_USERS: str({ default: 'apex_service' }),
+  JWT_ISSUER_ADMIN: str({ default: 'apex_admin_service' }),
   INTERNAL_SERVICE_SECRET: str(),
   BCRYPT_ROUNDS: num({ default: 12 }),
   ADMIN_SECRET_KEY: str(),
@@ -125,11 +129,14 @@ export const jwtOptions = {
   access: {
     secret: env.JWT_ACCESS_SECRET,
     expiresIn: env.JWT_ACCESS_EXPIRES_IN,
-    issuer: env.JWT_ISSUER,
+    issuer_audience: env.JWT_ISSUER_USERS,
+    issuer_admin: env.JWT_ISSUER_ADMIN,
+
   },
   refresh: {
     secret: env.JWT_REFRESH_SECRET,
     expiresIn: env.JWT_REFRESH_EXPIRES_IN,
-    issuer: env.JWT_ISSUER,
+    issuer_audience: env.JWT_ISSUER_USERS,
+    issuer_admin: env.JWT_ISSUER_ADMIN,
   },
 };

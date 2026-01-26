@@ -1,6 +1,6 @@
 import { createLogger } from '../shared/utils/logger.utils';
 
-const logger = createLogger('cors');
+const logger = createLogger('cors-config');
 
 interface CorsConfig {
   origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => void;

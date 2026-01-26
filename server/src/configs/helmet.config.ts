@@ -2,7 +2,7 @@ import helmet from 'helmet';
 import { createLogger } from '../shared/utils/logger.utils';
 import { env } from './env.config';
 
-const logger = createLogger('helmet.config');
+const logger = createLogger('helmet-config');
 
 
 class SecurityHeadersManager {

@@ -3,7 +3,7 @@ import { randomBytes, randomInt, createHash } from 'crypto';
 import {env} from '../../configs/env.config'
 import { createLogger } from './logger.utils';
 
-const logger = createLogger('crypto.utils')
+const logger = createLogger('crypto-utils')
 
 export class CryptoUtils {
 
