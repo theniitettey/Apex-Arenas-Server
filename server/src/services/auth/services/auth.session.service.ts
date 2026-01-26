@@ -1,5 +1,5 @@
 import { tokenService, DeviceInfo, TokenPair } from './auth.token.service';
-import { AuthLog } from '../../../models/user.model';
+import { AuditService } from './auth.audit.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
 const logger = createLogger('auth-session-service');
@@ -54,7 +54,7 @@ export class SessionService {
         true // revoke existing tokens on new login
       );
 
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'login_success',
         success: true,
@@ -88,7 +88,7 @@ export class SessionService {
         true // revoke existing tokens on new login
       );
 
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'login_success',
         success: true,
@@ -149,7 +149,7 @@ export class SessionService {
       }
 
       // 5. Log the refresh event
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'token_refreshed',
         success: true,
@@ -210,7 +210,7 @@ export class SessionService {
       }
 
       // 5. Log the refresh event
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'token_refreshed',
         success: true,
@@ -299,7 +299,7 @@ export class SessionService {
     try {
       await tokenService.revokeRefreshToken(refreshToken);
 
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'logout',
         success: true,
@@ -324,7 +324,7 @@ export class SessionService {
       const reason = context.reason as 'logout' | 'password_change' | 'security_concern' | 'admin_action' || 'logout';
       await tokenService.revokeAllUserTokens(user_id, reason);
 
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'logout_all_devices',
         success: true,
@@ -357,7 +357,7 @@ export class SessionService {
       const revoked = await tokenService.revokeSession(user_id, session_id);
 
       if (revoked) {
-        await this.logAuthEvent({
+        await AuditService.logAuthEvent({
           user_id,
           event_type: 'token_revoked',
           success: true,
@@ -415,44 +415,6 @@ export class SessionService {
     } catch (error: any) {
       logger.error('Error getting session count:', error);
       return 0;
-    }
-  }
-
-  // ============================================
-  // AUDIT LOGGING
-  // ============================================
-
-  /**
-   * Log authentication event
-   */
-  private async logAuthEvent(params: {
-    user_id?: string;
-    event_type: string;
-    success: boolean;
-    identifier?: string;
-    metadata: {
-      ip_address: string;
-      user_agent: string;
-      failure_reason?: string;
-      [key: string]: any;
-    };
-  }): Promise<void> {
-    try {
-      await AuthLog.create({
-        user_id: params.user_id,
-        event_type: params.event_type,
-        success: params.success,
-        identifier: params.identifier,
-        metadata: {
-          ip_address: params.metadata.ip_address,
-          user_agent: params.metadata.user_agent,
-          failure_reason: params.metadata.failure_reason,
-          is_suspicious: false
-        }
-      });
-    } catch (error: any) {
-      // Log but don't throw - audit logging shouldn't break auth flow
-      logger.error('Failed to log auth event', { error: error.message });
     }
   }
 }

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { randomBytes, randomInt, createHash } from 'crypto';
 import {env} from '../../configs/env.config'
@@ -49,6 +50,51 @@ export class CryptoUtils {
       logger.error("Error comparing has: ", error);
       throw new Error("HASH_COMPARISON_FAILED");
     }
+  }
+
+  /**
+   * Encrypt sensitive data (like TOTP secrets)
+   */
+  static encrypt(text: string): string {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync(env.ENCRYPTION_KEY || env.JWT_ACCESS_SECRET, 'salt', 32);
+    const iv = crypto.randomBytes(16);
+    
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
+    // Return iv:authTag:encrypted
+    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+  }
+
+  /**
+   * Decrypt sensitive data
+   */
+  static decrypt(encryptedText: string): string {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync(env.ENCRYPTION_KEY || env.JWT_ACCESS_SECRET, 'salt', 32);
+    
+    const [ivHex, authTagHex, encrypted] = encryptedText.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
+    decipher.setAuthTag(authTag);
+    
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  }
+
+  /**
+   * Generate cryptographically secure random integer
+   */
+  static randomInt(max: number): number {
+    return crypto.randomInt(max);
   }
 
   /**

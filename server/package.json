@@ -32,8 +32,15 @@
     "mongoose": "^9.1.5",
     "node": "^25.4.0",
     "nodemon": "^3.1.11",
+    "otpauth": "^9.4.1",
+    "otplib": "^13.2.0",
     "path": "^0.12.7",
+    "qrcode": "^1.5.4",
     "typescript": "^5.9.3",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@types/otplib": "^10.0.0",
+    "@types/qrcode": "^1.5.6"
   }
 }

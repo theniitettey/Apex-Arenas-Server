@@ -257,6 +257,7 @@ export interface IApexUserSecurity extends Document {
     is_enabled: boolean;
     method: 'none' | 'sms' | 'email' | 'authenticator_app';
     enabled_at?: Date;
+    setup_required: boolean; // force setup on next login
     
     // For authenticator app
     totp_secret?: string; // encrypted
@@ -617,6 +618,7 @@ const ApexUserSecuritySchema = new Schema<IApexUserSecurity>({
     is_enabled: { type: Boolean, default: false },
     method: { type: String, enum: ['none', 'sms', 'email', 'authenticator_app'], default: 'none' },
     enabled_at: { type: Date },
+    setup_required: { type: Boolean, default: false },
     totp_secret: { type: String },
     totp_verified: { type: Boolean, default: false },
     backup_codes: [{

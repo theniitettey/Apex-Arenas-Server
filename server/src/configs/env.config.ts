@@ -47,6 +47,7 @@ export const env = cleanEnv(process.env, {
   INTERNAL_SERVICE_SECRET: str(),
   BCRYPT_ROUNDS: num({ default: 12 }),
   ADMIN_SECRET_KEY: str(),
+  ADMIN_EMAILS: str({ default: '' }), // Comma separated list of admin emails
 
   // CORS
   CORS_CREDENTIALS: bool({ default: true }),
@@ -67,10 +68,17 @@ export const env = cleanEnv(process.env, {
   // Health check
   HEALTH_CHECK_INTERVAL: num({ default: 30000 }), // 30s
 
-  // OTP
+  // App Info
+  APP_NAME: str({ default: 'ApexArenas' }),
+
+  // Encryption (for TOTP secrets)
+  ENCRYPTION_KEY: str({ default: '' }),
+
+  // OTP Configuration
   OTP_LENGTH: num({ default: 6 }),
   OTP_EXPIRY_MINUTES: num({ default: 10 }),
   OTP_MAX_ATTEMPTS: num({ default: 3 }),
+  
 
   // Idempotency
   IDEMPOTENCY_TTL: num({ default: 3600 }),
