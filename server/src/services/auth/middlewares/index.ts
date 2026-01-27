@@ -37,3 +37,29 @@ export {
   requireSuperAdmin,
   preventSelfAction
 } from './auth.admin.middleware';
+
+// Validation
+export {
+  validateRequest,
+  validateQuery,
+  validateParams,
+  // Schemas
+  registerSchema,
+  loginSchema,
+  adminLoginSchema,
+  refreshTokenSchema,
+  changePasswordSchema,
+  requestPasswordResetSchema,
+  confirmPasswordResetSchema,
+  validatePasswordSchema,
+  requestOtpSchema,
+  verifyOtpSchema,
+  verifyEmailSchema,
+  verify2FASchema,
+  setup2FAVerifySchema,
+  disable2FASchema,
+  regenerateBackupCodesSchema,
+  updateProfileSchema,
+  adminSetupSchema,
+  logoutSchema
+} from './auth.validation.middleware';
