@@ -6,6 +6,7 @@ import { twoFactorService } from './auth.2fa.service';
 import { PasswordService } from './auth.password.service';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { emailService } from '../../../shared/utils/email.util';
 
 const logger = createLogger('auth-admin-service');
 
@@ -657,6 +658,18 @@ export class AdminService {
           admin_reason: 'Account unlocked by admin'
         }
       });
+
+      // Send account unlocked notification
+      const user = await User.findById(user_id).select('email profile.first_name');
+      if (user) {
+        await emailService.sendEmail({
+          to: user.email,
+          template: 'account_unlocked',
+          data: {
+            user_name: user.profile?.first_name || 'User'
+          }
+        });
+      }
 
       logger.info('Account unlocked by admin', { user_id, admin_id });
 

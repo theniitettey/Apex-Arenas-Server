@@ -1,0 +1,54 @@
+<!-- filepath: c:\Users\joy\Desktop\Git\Apex-Arenas-Server\server\src\shared\templates\emails\security\2fa-disabled.hbs -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2FA Disabled</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 0;">
+        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">⚠️ 2FA Disabled</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">Hi {{user_name}},</p>
+              <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">
+                Two-factor authentication has been disabled on your Apex Arenas account.
+              </p>
+              <div style="background-color: #f3f4f6; border-radius: 8px; padding: 20px; margin: 0 0 30px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 10px 0; color: #6b7280; font-size: 14px;">Disabled at:</td>
+                    <td style="padding: 10px 0; color: #1f2937; font-size: 14px; font-weight: bold; text-align: right;">{{formatDate disabled_at}}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #6b7280; font-size: 14px; border-top: 1px solid #e5e7eb;">IP Address:</td>
+                    <td style="padding: 10px 0; color: #1f2937; font-size: 14px; font-weight: bold; text-align: right; border-top: 1px solid #e5e7eb;">{{ip_address}}</td>
+                  </tr>
+                </table>
+              </div>
+              <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 0 0 20px;">
+                <p style="margin: 0; color: #991b1b; font-size: 14px;">⚠️ <strong>Wasn't you?</strong> If you didn't disable 2FA, your account may be compromised. Please change your password and re-enable 2FA immediately.</p>
+              </div>
+              <p style="margin: 0; color: #6b7280; font-size: 14px;">We recommend keeping 2FA enabled to protect your account and tournament winnings.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 10px; color: #6b7280; font-size: 12px; text-align: center;">Need help? Contact us at <a href="mailto:{{support_email}}" style="color: #7c3aed; text-decoration: none;">{{support_email}}</a></p>
+              <p style="margin: 0; color: #9ca3af; font-size: 12px; text-align: center;">© {{current_year}} Apex Arenas. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

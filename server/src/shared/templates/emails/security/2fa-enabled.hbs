@@ -1,0 +1,46 @@
+<!-- filepath: c:\Users\joy\Desktop\Git\Apex-Arenas-Server\server\src\shared\templates\emails\security\2fa-enabled.hbs -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2FA Enabled</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 0;">
+        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">🛡️ 2FA Enabled</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">Hi {{user_name}},</p>
+              <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">
+                Great news! Two-factor authentication has been successfully enabled on your Apex Arenas account.
+              </p>
+              <div style="background-color: #ecfdf5; border-radius: 8px; padding: 20px; margin: 0 0 30px; text-align: center;">
+                <p style="margin: 0 0 10px; color: #065f46; font-size: 16px; font-weight: bold;">🎉 Your account is now more secure!</p>
+                <p style="margin: 0; color: #047857; font-size: 14px;">Method: {{method}}</p>
+                <p style="margin: 5px 0 0; color: #6b7280; font-size: 12px;">Enabled on {{formatDate enabled_at}}</p>
+              </div>
+              <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 0 0 20px;">
+                <p style="margin: 0; color: #92400e; font-size: 14px;">💡 <strong>Important:</strong> Make sure to save your backup codes in a safe place. You'll need them if you lose access to your authenticator app.</p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 10px; color: #6b7280; font-size: 12px; text-align: center;">Need help? Contact us at <a href="mailto:{{support_email}}" style="color: #7c3aed; text-decoration: none;">{{support_email}}</a></p>
+              <p style="margin: 0; color: #9ca3af; font-size: 12px; text-align: center;">© {{current_year}} Apex Arenas. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

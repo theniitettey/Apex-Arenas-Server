@@ -26,6 +26,7 @@
     "express": "^5.2.1",
     "express-mongo-sanitize": "^2.2.0",
     "fs": "0.0.1-security",
+    "handlebars": "^4.7.8",
     "helmet": "^8.1.0",
     "ioredis": "^5.9.2",
     "jsonwebtoken": "^9.0.3",
@@ -36,12 +37,14 @@
     "otplib": "^13.2.0",
     "path": "^0.12.7",
     "qrcode": "^1.5.4",
+    "resend": "^6.8.0",
     "typescript": "^5.9.3",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/handlebars": "^4.1.0",
     "@types/otplib": "^10.0.0",
     "@types/qrcode": "^1.5.6"
   }

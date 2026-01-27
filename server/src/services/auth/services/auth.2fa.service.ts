@@ -4,6 +4,7 @@ import { UserSecurity, User } from '../../../models/user.model';
 import { PasswordService } from './auth.password.service';
 import { AuditService } from './auth.audit.service';
 import { CryptoUtils } from '../../../shared/utils/crypto.utils';
+import { emailService } from '../../../shared/utils/email.util';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
@@ -174,6 +175,7 @@ export class TwoFactorService {
       security.two_factor.is_enabled = true;
       security.two_factor.totp_verified = true;
       security.two_factor.enabled_at = new Date();
+      security.two_factor.setup_required = false;
       security.two_factor.backup_codes = hashed_backup_codes;
       security.two_factor.backup_codes_generated_at = new Date();
       await security.save();
@@ -187,6 +189,16 @@ export class TwoFactorService {
           user_agent: device_context.user_agent
         }
       });
+
+      // Send 2FA enabled notification email
+      const user = await User.findById(user_id).select('email profile.first_name');
+      if (user) {
+        await emailService.send2FAEnabledEmail(user.email, {
+          user_name: user.profile?.first_name || 'User',
+          method: 'Authenticator App',
+          enabled_at: new Date()
+        });
+      }
 
       logger.info('2FA enabled successfully', { user_id });
 
@@ -394,12 +406,18 @@ export class TwoFactorService {
 
       await AuditService.logAuthEvent({
         user_id,
-        event_type: '2fa_enabled', // Using this event for backup code regeneration
+        event_type: '2fa_enabled',
         success: true,
         metadata: {
           ip_address: device_context.ip_address,
           user_agent: device_context.user_agent
         }
+      });
+
+      // Send backup codes regenerated notification
+      await emailService.sendBackupCodesGeneratedEmail(user.email, {
+        user_name: user.profile?.first_name || 'User',
+        generated_at: new Date()
       });
 
       logger.info('Backup codes regenerated', { user_id });
@@ -472,6 +490,13 @@ export class TwoFactorService {
           ip_address: device_context.ip_address,
           user_agent: device_context.user_agent
         }
+      });
+
+      // Send 2FA disabled notification
+      await emailService.send2FADisabledEmail(user.email, {
+        user_name: user.profile?.first_name || 'User',
+        disabled_at: new Date(),
+        ip_address: device_context.ip_address
       });
 
       logger.info('2FA disabled successfully', { user_id });

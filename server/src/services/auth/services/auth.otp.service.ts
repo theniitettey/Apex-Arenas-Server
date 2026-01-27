@@ -1,5 +1,6 @@
 import { OTP, IApexOTP, User, AuthLog } from "../../../models/user.model";
 import { CryptoUtils } from "../../../shared/utils/crypto.utils";
+import { emailService } from "../../../shared/utils/email.util";
 import { env } from "../../../configs/env.config";
 import { createLogger } from "../../../shared/utils/logger.utils";
 
@@ -64,7 +65,8 @@ export class OTPService {
 
       // Calculate expiration
       const expires_at = new Date();
-      expires_at.setMinutes(expires_at.getMinutes() + (env.OTP_EXPIRY_MINUTES || 10));
+      const expiry_minutes = env.OTP_EXPIRY_MINUTES || 10;
+      expires_at.setMinutes(expires_at.getMinutes() + expiry_minutes);
 
       // Store in MongoDB (hashed)
       const otpRecord = await OTP.create({
@@ -95,12 +97,85 @@ export class OTPService {
         }
       });
 
-      logger.info('OTP generated', { user_id, type, otp_id: otpRecord._id, expires_at });
+      // Send OTP email based on type
+      await this.sendOTPEmail(user_id, type, otp, expiry_minutes);
+
+      logger.info('OTP generated and email sent', { user_id, type, otp_id: otpRecord._id, expires_at });
 
       return { otp, otp_id: otpRecord._id.toString() };
     } catch (error: any) {
       logger.error('Error generating OTP:', error);
       throw new Error('OTP_GENERATION_FAILED');
+    }
+  }
+
+  /**
+   * Send OTP email based on type
+   */
+  private async sendOTPEmail(
+    user_id: string,
+    type: OTPGenerateOptions['type'],
+    otp: string,
+    expiry_minutes: number
+  ): Promise<void> {
+    try {
+      // Get user details
+      const user = await User.findById(user_id).select('email profile.first_name');
+      if (!user) {
+        logger.warn('User not found for OTP email', { user_id });
+        return;
+      }
+
+      const user_name = user.profile?.first_name || 'User';
+      const email = user.email;
+
+      switch (type) {
+        case 'email_verification':
+          await emailService.sendEmailVerificationOTP(email, {
+            user_name,
+            otp,
+            expiry_minutes
+          });
+          break;
+
+        case 'password_reset':
+          await emailService.sendPasswordResetOTP(email, {
+            user_name,
+            otp,
+            expiry_minutes
+          });
+          break;
+
+        case '2fa_login':
+          await emailService.send2FALoginOTP(email, {
+            user_name,
+            otp,
+            expiry_minutes
+          });
+          break;
+
+        case 'withdrawal_confirmation':
+          // This would typically include amount details passed via metadata
+          await emailService.sendWithdrawalOTP(email, {
+            user_name,
+            otp,
+            amount: 0, // Should be passed from caller
+            currency: 'GHS',
+            expiry_minutes
+          });
+          break;
+
+        case 'phone_verification':
+          // Phone verification typically uses SMS, not email
+          logger.info('Phone verification OTP - SMS would be sent', { user_id });
+          break;
+
+        default:
+          logger.warn('Unknown OTP type for email', { type });
+      }
+    } catch (error: any) {
+      // Don't throw - OTP was created, email failure shouldn't block
+      logger.error('Failed to send OTP email (non-critical)', { user_id, type, error: error.message });
     }
   }
 

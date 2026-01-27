@@ -88,6 +88,14 @@ export const env = cleanEnv(process.env, {
   MAX_PASSWORD_LENGTH: num({ default: 128 }),
   MIN_NAME_LENGTH: num({ default: 2 }),
   MAX_NAME_LENGTH: num({ default: 50 }),
+
+  // Resend API Key
+  RESEND_API_KEY: str({ default: '' }),
+  EMAIL_FROM_NOREPLY: str({ default: 'no-reply@apexarenas.com' }),
+  EMAIL_FROM_SUPPORT: str({ default: 'support@apexarenas.com' }),
+  EMAIL_ENABLED: bool({ default: true }),
+  EMAIL_REPLY_TO: str({ default: 'support@apexarenas.com' }),
+
 });
 
 

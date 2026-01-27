@@ -296,6 +296,15 @@ export const logoutSchema = z.object({
   refresh_token: z.string().optional()
 });
 
+// Add this schema if not present
+export const resendVerificationSchema = z.object({
+  email: z.string()
+    .min(1, 'Email is required')
+    .email('Invalid email format')
+    .toLowerCase()
+    .trim()
+});
+
 // ============================================
 // VALIDATION MIDDLEWARE
 // ============================================
