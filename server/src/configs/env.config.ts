@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import {cleanEnv, str, num, bool} from 'envalid';
 import { createLogger } from '../shared/utils/logger.utils';
 
-
 const logger = createLogger('env-config');
 
 dotenv.config();
@@ -49,6 +48,52 @@ export const env = cleanEnv(process.env, {
   ADMIN_SECRET_KEY: str(),
   ADMIN_EMAILS: str({ default: '' }), // Comma separated list of admin emails
 
+  // Lockout Configuration
+  LOCKOUT_MAX_ATTEMPTS_USER: num({ default: 5 }),
+  LOCKOUT_MAX_ATTEMPTS_ADMIN: num({ default: 3 }),
+  LOCKOUT_DURATION_USER_MINUTES: num({ default: 30 }),
+  LOCKOUT_DURATION_ADMIN_MINUTES: num({ default: 60 }),
+
+  // Session Configuration
+  MAX_SESSIONS_PER_USER: num({ default: 1 }), // Single session enforcement
+  MAX_SESSIONS_PER_ADMIN: num({ default: 1 }),
+
+  // Token Blacklist
+  TOKEN_BLACKLIST_TTL_SECONDS: num({ default: 900 }), // 15 minutes (match access token expiry)
+
+  // Password Configuration
+  PASSWORD_HISTORY_COUNT: num({ default: 5 }),
+  PASSWORD_MIN_STRENGTH_SCORE: num({ default: 60 }),
+  HIBP_API_ENABLED: bool({ default: true }),
+  HIBP_API_TIMEOUT_MS: num({ default: 5000 }),
+
+  // OTP Configuration
+  OTP_LENGTH: num({ default: 6 }),
+  OTP_EXPIRY_MINUTES: num({ default: 10 }),
+  OTP_MAX_ATTEMPTS: num({ default: 3 }),
+  OTP_COOLDOWN_SECONDS: num({ default: 60 }),
+  OTP_LOCKOUT_MINUTES: num({ default: 15 }),
+
+  // IP Blocking
+  IP_BLOCK_DURATION_SECONDS: num({ default: 3600 }), // 1 hour
+  IP_SUSPICIOUS_THRESHOLD: num({ default: 3 }),
+  IP_FAILED_ATTEMPTS_THRESHOLD: num({ default: 10 }),
+  IP_AUTO_BLOCK_FAILED_THRESHOLD: num({ default: 20 }),
+
+  // Audit & Cleanup
+  AUDIT_LOG_RETENTION_DAYS: num({ default: 90 }),
+  SUSPICIOUS_ACTIVITY_WINDOW_HOURS: num({ default: 24 }),
+  FAILED_LOGIN_WINDOW_MINUTES: num({ default: 15 }),
+  
+  // Activity Tracking
+  ACTIVITY_WINDOW_DAYS: num({ default: 30 }),
+  
+  // 2FA Configuration
+  TOTP_DIGITS: num({ default: 6 }),
+  TOTP_PERIOD_SECONDS: num({ default: 30 }),
+  BACKUP_CODES_COUNT: num({ default: 10 }),
+  BACKUP_CODE_LENGTH: num({ default: 8 }),
+  
   // CORS
   CORS_CREDENTIALS: bool({ default: true }),
 
@@ -59,7 +104,6 @@ export const env = cleanEnv(process.env, {
   RATE_LIMIT_WINDOW: num({ default: 900000 }), // 15m
   RATE_LIMIT_MAX_ATTEMPTS: num({ default: 100 }),
   OTP_RATE_LIMIT_MAX: num({ default: 5 }),
-  OTP_COOLDOWN_SECONDS: num({ default: 60 }),
 
   // Logging.
   LOG_LEVEL: str({ choices: ['error', 'warn', 'info', 'debug'], default: 'info' }),
@@ -74,11 +118,6 @@ export const env = cleanEnv(process.env, {
   // Encryption (for TOTP secrets)
   ENCRYPTION_KEY: str({ default: '' }),
 
-  // OTP Configuration
-  OTP_LENGTH: num({ default: 6 }),
-  OTP_EXPIRY_MINUTES: num({ default: 10 }),
-  OTP_MAX_ATTEMPTS: num({ default: 3 }),
-  
 
   // Idempotency
   IDEMPOTENCY_TTL: num({ default: 3600 }),

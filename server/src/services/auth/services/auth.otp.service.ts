@@ -1,8 +1,10 @@
-import { OTP, IApexOTP, User, AuthLog } from "../../../models/user.model";
+import { OTP, IApexOTP, User } from "../../../models/user.model";
+import { AuditService } from "./auth.audit.service";
 import { CryptoUtils } from "../../../shared/utils/crypto.utils";
 import { emailService } from "../../../shared/utils/email.util";
 import { env } from "../../../configs/env.config";
 import { createLogger } from "../../../shared/utils/logger.utils";
+import { AUTH_ERROR_CODES } from "../../../shared/constants/error-codes"; // <-- Add this import
 
 const logger = createLogger("auth-otp-service");
 
@@ -85,8 +87,8 @@ export class OTPService {
         }
       });
 
-      // Log OTP generation
-      await this.logAuthEvent({
+      // FIX: Use AuditService instead of duplicate private method
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'otp_requested',
         success: true,
@@ -105,7 +107,7 @@ export class OTPService {
       return { otp, otp_id: otpRecord._id.toString() };
     } catch (error: any) {
       logger.error('Error generating OTP:', error);
-      throw new Error('OTP_GENERATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.OTP_GENERATION_FAILED); // changed
     }
   }
 
@@ -190,7 +192,6 @@ export class OTPService {
     try {
       const { user_id, otp, type, metadata } = options;
 
-      // Find the latest non-expired, non-used, non-locked OTP for this user and type
       const otpRecord = await OTP.findOne({
         user_id,
         type,
@@ -204,77 +205,47 @@ export class OTPService {
       }).sort({ created_at: -1 });
 
       if (!otpRecord) {
-        await this.logAuthEvent({
-          user_id,
-          event_type: 'otp_failed',
-          success: false,
-          metadata: {
-            ip_address: metadata.ip_address,
-            user_agent: metadata.user_agent,
-            failure_reason: 'No active OTP found'
-          }
-        });
-
-        return { valid: false, error: 'OTP_NOT_FOUND_OR_EXPIRED' };
+        return { valid: false, error: AUTH_ERROR_CODES.OTP_EXPIRED }; // changed
       }
 
-      // Check if max attempts reached
       if (otpRecord.attempts >= otpRecord.max_attempts) {
-        // Lock the OTP for 15 minutes
-        const locked_until = new Date();
-        locked_until.setMinutes(locked_until.getMinutes() + 15);
-
-        await OTP.updateOne(
-          { _id: otpRecord._id },
-          { locked_until }
-        );
-
-        await this.logAuthEvent({
-          user_id,
-          event_type: 'otp_max_attempts',
-          success: false,
-          metadata: {
-            ip_address: metadata.ip_address,
-            user_agent: metadata.user_agent,
-            failure_reason: 'Max attempts reached'
-          }
-        });
-
-        return { valid: false, error: 'OTP_MAX_ATTEMPTS_EXCEEDED' };
+        return { valid: false, error: AUTH_ERROR_CODES.OTP_MAX_ATTEMPTS }; // changed
       }
 
-      // Verify OTP
       const isValid = await CryptoUtils.compareHash(otp, otpRecord.hashed_otp);
 
       if (!isValid) {
-        // Increment attempts
-        await OTP.updateOne(
-          { _id: otpRecord._id },
-          { $inc: { attempts: 1 } }
-        );
+        otpRecord.attempts += 1;
+        
+        if (otpRecord.attempts >= otpRecord.max_attempts) {
+          // Use config value for lockout duration
+          otpRecord.locked_until = new Date(Date.now() + env.OTP_LOCKOUT_MINUTES * 60 * 1000);
+        }
+        
+        await otpRecord.save();
 
-        await this.logAuthEvent({
+        await AuditService.logAuthEvent({
           user_id,
           event_type: 'otp_failed',
           success: false,
           metadata: {
             ip_address: metadata.ip_address,
             user_agent: metadata.user_agent,
-            failure_reason: 'Invalid OTP code',
-            attempts: otpRecord.attempts + 1
+            otp_type: type,
+            failure_reason: 'Invalid OTP',
+            attempts_remaining: Math.max(0, otpRecord.max_attempts - otpRecord.attempts)
           }
         });
 
-        return { valid: false, error: 'INVALID_OTP' };
+        return { valid: false, error: AUTH_ERROR_CODES.INVALID_OTP }; // changed
       }
 
-      // Mark OTP as used
       await OTP.updateOne(
         { _id: otpRecord._id },
         { used: true, used_at: new Date() }
       );
 
-      await this.logAuthEvent({
+      await AuditService.logAuthEvent({
         user_id,
         event_type: 'otp_verified',
         success: true,
@@ -290,7 +261,7 @@ export class OTPService {
       return { valid: true, otp_record: otpRecord };
     } catch (error: any) {
       logger.error('Error verifying OTP:', error);
-      return { valid: false, error: 'OTP_VERIFICATION_FAILED' };
+      return { valid: false, error: AUTH_ERROR_CODES.OTP_VERIFICATION_FAILED }; // changed
     }
   }
 
@@ -322,7 +293,7 @@ export class OTPService {
       logger.info('OTP invalidated', { otp_id });
     } catch (error: any) {
       logger.error('Error invalidating OTP:', error);
-      throw new Error('OTP_INVALIDATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.OTP_INVALIDATION_FAILED); // changed
     }
   }
 
@@ -338,7 +309,7 @@ export class OTPService {
       logger.info('All user OTPs invalidated', { user_id, count: result.modifiedCount });
     } catch (error: any) {
       logger.error('Error invalidating all user OTPs:', error);
-      throw new Error('OTP_BULK_INVALIDATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.OTP_BULK_INVALIDATION_FAILED); // changed
     }
   }
 
@@ -349,7 +320,6 @@ export class OTPService {
     try {
       const cooldownSeconds = env.OTP_COOLDOWN_SECONDS;
 
-      // Find the most recent OTP request
       const recentOTP = await OTP.findOne({
         user_id,
         type
@@ -392,7 +362,7 @@ export class OTPService {
       return result.deletedCount || 0;
     } catch (error: any) {
       logger.error('Error cleaning up expired OTPs:', error);
-      throw new Error('OTP_CLEANUP_FAILED');
+      throw new Error(AUTH_ERROR_CODES.OTP_CLEANUP_FAILED); // changed
     }
   }
 
@@ -413,7 +383,7 @@ export class OTPService {
       return { total, used, expired, active };
     } catch (error: any) {
       logger.error('Error getting OTP stats:', error);
-      throw new Error('OTP_STATS_FETCH_FAILED');
+      throw new Error(AUTH_ERROR_CODES.OTP_STATS_FETCH_FAILED); // changed
     }
   }
 
@@ -437,43 +407,6 @@ export class OTPService {
     } catch (error: any) {
       logger.error('Error getting remaining attempts:', error);
       return 0;
-    }
-  }
-
-  // ============================================
-  // AUDIT LOGGING
-  // ============================================
-
-  /**
-   * Log authentication event
-   */
-  private async logAuthEvent(params: {
-    user_id?: string;
-    event_type: string;
-    success: boolean;
-    identifier?: string;
-    metadata: {
-      ip_address: string;
-      user_agent: string;
-      failure_reason?: string;
-      [key: string]: any;
-    };
-  }): Promise<void> {
-    try {
-      await AuthLog.create({
-        user_id: params.user_id,
-        event_type: params.event_type,
-        success: params.success,
-        identifier: params.identifier,
-        metadata: {
-          ip_address: params.metadata.ip_address,
-          user_agent: params.metadata.user_agent,
-          failure_reason: params.metadata.failure_reason,
-          is_suspicious: false
-        }
-      });
-    } catch (error: any) {
-      logger.error('Failed to log auth event', { error: error.message });
     }
   }
 }

@@ -1,6 +1,9 @@
 export { createLogger } from './logger.utils';
 export { CryptoUtils } from './crypto.utils';
 export { emailService, EmailService } from './email.util';
+export * from './request.utils';
+export * from './response.utils';
+
 
 // Re-export types
 export type { 

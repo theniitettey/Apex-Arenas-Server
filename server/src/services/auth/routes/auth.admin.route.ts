@@ -1,5 +1,6 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { adminController } from '../controllers/auth.admin.controller';
+import { User } from '../../../models/user.model';
 import {
   adminAuthMiddleware,
   verifyAdminWhitelist,
@@ -10,17 +11,62 @@ import {
   authErrorHandler,
   asyncHandler
 } from '../middlewares';
+import { createLogger } from '../../../shared/utils/logger.utils';
 
-const router:Router = Router();
+const logger = createLogger('auth-admin-routes');
+
+const router: Router = Router();
 
 // ============================================
-// All admin routes require:
-// 1. Valid admin JWT token
-// 2. Admin email in whitelist
-// 3. Rate limiting
+// ADMIN BOOTSTRAP - Special route for first admin setup
+// This route is ONLY accessible when no admins exist
 // ============================================
 
-// Apply admin authentication to all routes
+/**
+ * Middleware to check if this is the first admin setup
+ * Only allows access if NO admin accounts exist
+ */
+const allowFirstAdminSetup = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const admin_count = await User.countDocuments({ role: 'admin' });
+    
+    if (admin_count > 0) {
+      logger.warn('First admin setup attempted when admins already exist', {
+        ip: req.ip,
+        admin_count
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Admin accounts already exist. Use the authenticated admin setup endpoint.',
+        error_code: 'ADMIN_EXISTS'
+      });
+    }
+
+    logger.info('First admin setup allowed - no existing admins');
+    next();
+  } catch (error:any) {
+    logger.error('Error checking admin count:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /admin/bootstrap
+ * Setup the FIRST admin account - no authentication required
+ * This endpoint is disabled once any admin exists
+ */
+router.post(
+  '/bootstrap',
+  allowFirstAdminSetup,
+  adminActionRateLimiter,
+  asyncHandler(adminController.setupAdmin.bind(adminController))
+);
+
+// ============================================
+// All other admin routes require authentication
+// ============================================
+
+// Apply admin authentication to all other routes
 router.use(adminAuthMiddleware);
 router.use(verifyAdminWhitelist);
 router.use(adminActionRateLimiter);
@@ -177,7 +223,7 @@ router.get(
   asyncHandler(adminController.listAdmins.bind(adminController))
 );
 
-// Setup new admin (typically first admin or super admin only)
+// Setup additional admin (requires super admin after first admin exists)
 router.post(
   '/admins/setup',
   requireSuperAdmin,

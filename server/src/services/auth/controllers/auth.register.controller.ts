@@ -82,19 +82,20 @@ export class RegisterController {
     } catch (error: any) {
       logger.error('Registration error:', error);
 
-      if (error.message === 'EMAIL_ALREADY_EXISTS') {
-        return res.status(409).json({
-          success: false,
-          error: 'An account with this email already exists',
-          error_code: 'EMAIL_ALREADY_EXISTS'
+      // SECURITY FIX: Use generic error message for email/username conflicts
+      // to prevent enumeration attacks
+      if (error.message === 'EMAIL_ALREADY_EXISTS' || error.message === 'USERNAME_ALREADY_EXISTS') {
+        // Log the specific reason internally for debugging
+        logger.warn('Registration conflict', { 
+          reason: error.message,
+          ip: req.ip 
         });
-      }
-
-      if (error.message === 'USERNAME_ALREADY_EXISTS') {
-        return res.status(409).json({
+        
+        // Return generic message to prevent enumeration
+        return res.status(400).json({
           success: false,
-          error: 'This username is already taken',
-          error_code: 'USERNAME_ALREADY_EXISTS'
+          error: 'Unable to create account with the provided details. Please try different credentials.',
+          error_code: 'REGISTRATION_FAILED'
         });
       }
 
@@ -294,6 +295,7 @@ export class RegisterController {
   /**
    * GET /auth/check-email
    * Check if email is available
+   * SECURITY: Rate limited to prevent enumeration
    */
   async checkEmailAvailability(req: Request, res: Response) {
     try {
@@ -308,6 +310,9 @@ export class RegisterController {
       }
 
       const user = await userService.getUserByEmail(email);
+
+      // SECURITY: Add slight delay to prevent timing attacks
+      await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 100));
 
       res.json({
         success: true,
@@ -330,6 +335,7 @@ export class RegisterController {
   /**
    * GET /auth/check-username
    * Check if username is available
+   * SECURITY: Rate limited to prevent enumeration
    */
   async checkUsernameAvailability(req: Request, res: Response) {
     try {
@@ -344,6 +350,9 @@ export class RegisterController {
       }
 
       const user = await userService.getUserByUsername(username);
+
+      // SECURITY: Add slight delay to prevent timing attacks
+      await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 100));
 
       res.json({
         success: true,

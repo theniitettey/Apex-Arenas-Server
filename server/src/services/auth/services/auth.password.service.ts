@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { CryptoUtils } from "../../../shared/utils/crypto.utils";
 import { env } from "../../../configs/env.config";
 import { createLogger } from "../../../shared/utils/logger.utils";
+import { AUTH_ERROR_CODES } from "../../../shared/constants/error-codes"; // Add this import
 
 const logger = createLogger('auth-password-service');
 
@@ -69,12 +70,12 @@ export class PasswordService {
       strength_score += 20;
     }
 
-    // Check for common weak passwords (basic check)
-    const weakPasswords = ['password', '123456', 'qwerty', 'letmein', 'welcome', 'admin', 'user'];
-    if (weakPasswords.includes(password.toLowerCase())) {
-      errors.push('Password is too common and easily guessable');
-      strength_score = Math.max(0, strength_score - 40);
-    }
+    // Bonus points for length
+    if (password.length >= 12) strength_score += 10;
+    if (password.length >= 16) strength_score += 10;
+
+    // Cap at 100
+    strength_score = Math.min(100, strength_score);
 
     return {
       is_valid: errors.length === 0,
@@ -92,7 +93,7 @@ export class PasswordService {
       return await CryptoUtils.hashSensitive(plainPassword);
     } catch (error: any) {
       logger.error('Error hashing password:', error);
-      throw new Error("PASSWORD_HASHING_FAILED");
+      throw new Error(AUTH_ERROR_CODES.HASHING_FAILED); // changed
     }
   }
 
@@ -105,7 +106,7 @@ export class PasswordService {
       return await CryptoUtils.compareHash(plainPassword, hashedPassword);
     } catch (error: any) {
       logger.error('Error comparing password:', error);
-      throw new Error("PASSWORD_COMPARISON_FAILED");
+      throw new Error(AUTH_ERROR_CODES.HASH_COMPARISON_FAILED); // changed
     }
   }
 
@@ -123,7 +124,10 @@ export class PasswordService {
     plainPassword: string, 
     previousHashes: string[]
   ): Promise<boolean> {
-    for (const hash of previousHashes) {
+    const historyLimit = env.PASSWORD_HISTORY_COUNT;
+    const hashesToCheck = previousHashes.slice(0, historyLimit);
+    
+    for (const hash of hashesToCheck) {
       const matches = await this.comparePassword(plainPassword, hash);
       if (matches) {
         return true;
@@ -165,23 +169,106 @@ export class PasswordService {
   }
 
   /**
-   * Check if password has been compromised in known breaches
-   * Note: This is a basic implementation. Consider integrating with 'HAVE I BEEN PWNED API'
+   * Check if password has been compromised using Have I Been Pwned API
+   * Uses k-Anonymity model - only sends first 5 chars of SHA1 hash
    */
   static async checkPasswordBreach(password: string): Promise<boolean> {
-    // Basic implementation - in production integrate with HIBP API
-    // For now, just checking against a small list of known compromised passwords
-    const knownBreachPasswords = [
-      'password123',
-      '12345678',
-      'qwerty123',
-      'letmein123',
-      'welcome123',
-      'admin123',
-      'user123'
-    ];
+    // Check if HIBP is enabled
+    if (!env.HIBP_API_ENABLED) {
+      logger.debug('HIBP API disabled, skipping breach check');
+      return false;
+    }
 
-    return knownBreachPasswords.includes(password.toLowerCase());
+    try {
+      // Create SHA1 hash of password
+      const sha1Hash = crypto
+        .createHash('sha1')
+        .update(password)
+        .digest('hex')
+        .toUpperCase();
+
+      // k-Anonymity: only send first 5 characters
+      const prefix = sha1Hash.substring(0, 5);
+      const suffix = sha1Hash.substring(5);
+
+      // Call HIBP API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), env.HIBP_API_TIMEOUT_MS);
+
+      const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+        method: 'GET',
+        headers: {
+          'User-Agent': `${env.APP_NAME}-PasswordChecker`,
+          'Add-Padding': 'true', // Adds padding to prevent response length analysis
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        logger.warn('HIBP API returned non-OK status', { status: response.status });
+        return false; // Fail open - don't block user if API is down
+      }
+
+      const text = await response.text();
+      
+      // Parse response - format is "SUFFIX:COUNT\r\n"
+      const lines = text.split('\r\n');
+      
+      for (const line of lines) {
+        const [hashSuffix, count] = line.split(':');
+        if (hashSuffix === suffix) {
+          const breachCount = parseInt(count, 10);
+          logger.warn('Password found in breach database', { breach_count: breachCount });
+          return true;
+        }
+      }
+
+      logger.debug('Password not found in breach database');
+      return false;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        logger.warn('HIBP API request timed out');
+      } else {
+        logger.error('Error checking HIBP API:', error);
+      }
+      // Fail open - don't block user registration if API fails
+      return false;
+    }
+  }
+
+  /**
+   * Quick local check against known weak passwords
+   * Used as fallback or additional check
+   */
+  static isCommonPassword(password: string): boolean {
+    const commonPasswords = [
+      'password', 'password1', 'password123', '123456', '12345678', '123456789',
+      'qwerty', 'qwerty123', 'letmein', 'welcome', 'admin', 'admin123',
+      'login', 'master', 'dragon', 'baseball', 'iloveyou', 'trustno1',
+      'sunshine', 'princess', 'football', 'monkey', 'shadow', 'superman',
+      'michael', 'jennifer', 'hunter', 'abc123', '654321', 'password1!',
+    ];
+    return commonPasswords.includes(password.toLowerCase());
+  }
+
+  /**
+   * Full password breach check - combines HIBP + local list
+   */
+  static async isPasswordCompromised(password: string): Promise<{ compromised: boolean; reason?: string }> {
+    // Check local common passwords first (fast)
+    if (this.isCommonPassword(password)) {
+      return { compromised: true, reason: 'common_password' };
+    }
+
+    // Check HIBP API
+    const inBreach = await this.checkPasswordBreach(password);
+    if (inBreach) {
+      return { compromised: true, reason: 'found_in_breach' };
+    }
+
+    return { compromised: false };
   }
 }
 
@@ -193,5 +280,6 @@ export const isPasswordDifferent = PasswordService.isPasswordDifferent;
 export const isPasswordReused = PasswordService.isPasswordReused;
 export const generateSecurePassword = PasswordService.generateSecurePassword;
 export const checkPasswordBreach = PasswordService.checkPasswordBreach;
+export const isPasswordCompromised = PasswordService.isPasswordCompromised;
 
 export const passwordService = new PasswordService();

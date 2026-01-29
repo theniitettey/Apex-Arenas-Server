@@ -1,25 +1,29 @@
-// Error handling
-export { AuthError, authErrorHandler, asyncHandler } from './auth.error.middleware';
-
 // JWT Authentication
-export { 
-  AuthRequest,
-  userAuthMiddleware, 
-  adminAuthMiddleware, 
+export {
+  userAuthMiddleware,
+  adminAuthMiddleware,
   optionalAuthMiddleware,
-  requireRole
+  requireRole,
+  AuthRequest
 } from './auth.jwt.middleware';
 
-// Internal service authentication
-export { 
-  InternalRequest,
+// Admin Middleware
+export {
+  verifyAdminWhitelist,
+  logAdminAction,
+  requireSuperAdmin,
+  preventSelfAction
+} from './auth.admin.middleware';
+
+// Internal Service Auth
+export {
   internalAuthMiddleware,
-  adminOrInternalMiddleware
+  adminOrInternalMiddleware,
+  InternalRequest
 } from './auth.internal.middleware';
 
-// Rate limiting
+// Rate Limiting
 export {
-  RateLimitOptions,
   createRateLimiter,
   loginRateLimiter,
   adminLoginRateLimiter,
@@ -30,13 +34,12 @@ export {
   adminActionRateLimiter
 } from './auth.ratelimit.middleware';
 
-// Admin-specific
+// Error Handling
 export {
-  verifyAdminWhitelist,
-  logAdminAction,
-  requireSuperAdmin,
-  preventSelfAction
-} from './auth.admin.middleware';
+  AuthError,
+  authErrorHandler,
+  asyncHandler
+} from './auth.error.middleware';
 
 // Validation
 export {
@@ -47,7 +50,6 @@ export {
   registerSchema,
   loginSchema,
   adminLoginSchema,
-  refreshTokenSchema,
   changePasswordSchema,
   requestPasswordResetSchema,
   confirmPasswordResetSchema,
@@ -57,9 +59,5 @@ export {
   verifyEmailSchema,
   verify2FASchema,
   setup2FAVerifySchema,
-  disable2FASchema,
-  regenerateBackupCodesSchema,
-  updateProfileSchema,
-  adminSetupSchema,
-  logoutSchema
+  updateProfileSchema
 } from './auth.validation.middleware';

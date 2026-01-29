@@ -1,10 +1,38 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { tokenService } from '../services/auth.token.service';
 import { sessionService } from '../services/auth.session.service';
+import { redisManager } from '../../../configs/redis.config';
 import { AuthRequest } from '../middlewares/auth.jwt.middleware';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
 const logger = createLogger('auth-token-controller');
+
+/**
+ * Extract bearer token from request
+ */
+const extractBearerToken = (req: Request): string | null => {
+  const auth_header = req.headers.authorization;
+  if (!auth_header || !auth_header.startsWith('Bearer ')) {
+    return null;
+  }
+  return auth_header.substring(7);
+};
+
+/**
+ * Blacklist an access token in Redis
+ */
+const blacklistAccessToken = async (token: string): Promise<void> => {
+  try {
+    const token_hash = crypto.createHash('sha256').update(token).digest('hex');
+    // Blacklist for 15 minutes (access token expiry time)
+    await redisManager.blacklistToken(token_hash, 15 * 60);
+    logger.debug('Access token blacklisted', { token_hash: token_hash.substring(0, 8) + '...' });
+  } catch (error) {
+    logger.error('Failed to blacklist access token', { error });
+    // Don't throw - logout should still succeed even if blacklisting fails
+  }
+};
 
 /**
  * Token Controller
@@ -391,6 +419,13 @@ export class TokenController {
         });
       }
 
+      // Blacklist the access token to invalidate it immediately
+      const access_token = extractBearerToken(req);
+      if (access_token) {
+        await blacklistAccessToken(access_token);
+      }
+
+      // Revoke the refresh token
       if (refresh_token) {
         await sessionService.revokeCurrentSession(
           user_id,
@@ -434,6 +469,13 @@ export class TokenController {
         });
       }
 
+      // Blacklist the current access token
+      const access_token = extractBearerToken(req);
+      if (access_token) {
+        await blacklistAccessToken(access_token);
+      }
+
+      // Revoke all refresh tokens
       await sessionService.revokeAllUserSessions(user_id, {
         ip_address: req.ip || 'unknown',
         user_agent: req.get('user-agent') || 'unknown',

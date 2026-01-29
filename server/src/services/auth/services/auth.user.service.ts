@@ -1,12 +1,14 @@
-import { User, IApexUser, UserSecurity, IApexUserSecurity } from '../../../models/user.model';
+import { User, IApexUser, UserSecurity, RefreshToken } from '../../../models/user.model';
 import { PasswordService } from './auth.password.service';
 import { AuditService } from './auth.audit.service';
-import { tokenService } from './auth.token.service';
 import { sessionService } from './auth.session.service';
+import { tokenService } from './auth.token.service';
 import { twoFactorService } from './auth.2fa.service';
 import { redisManager } from '../../../configs/redis.config';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { DeviceContext } from '../../../shared/utils/request.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-user-service');
 
@@ -66,13 +68,6 @@ export interface UpdateProfileData {
   };
 }
 
-export interface DeviceContext {
-  ip_address: string;
-  user_agent: string;
-  device_fingerprint?: string;
-  device_type?: 'mobile' | 'tablet' | 'desktop' | 'unknown';
-}
-
 export interface Complete2FALoginResult {
   success: boolean;
   user?: IApexUser;
@@ -87,11 +82,51 @@ export interface Complete2FALoginResult {
 // ============================================
 
 export class UserService {
-  // Lockout configuration
-  private readonly MAX_FAILED_ATTEMPTS_USER = 5;
-  private readonly MAX_FAILED_ATTEMPTS_ADMIN = 3; // Stricter for admin
-  private readonly LOCK_TIME_USER = 30 * 60 * 1000; // 30 minutes
-  private readonly LOCK_TIME_ADMIN = 60 * 60 * 1000; // 1 hour for admin
+  // Use config values instead of hardcoded numbers
+  private readonly MAX_FAILED_ATTEMPTS_USER = env.LOCKOUT_MAX_ATTEMPTS_USER;
+  private readonly MAX_FAILED_ATTEMPTS_ADMIN = env.LOCKOUT_MAX_ATTEMPTS_ADMIN;
+  private readonly LOCK_TIME_USER = env.LOCKOUT_DURATION_USER_MINUTES * 60 * 1000;
+  private readonly LOCK_TIME_ADMIN = env.LOCKOUT_DURATION_ADMIN_MINUTES * 60 * 1000;
+  private readonly MAX_SESSIONS = env.MAX_SESSIONS_PER_USER;
+
+  /**
+   * Detect device type from user agent string
+   */
+  
+  private detectDeviceType(user_agent: string): 'mobile' | 'tablet' | 'desktop' | 'unknown' {
+    if (!user_agent) return 'unknown';
+
+    const ua = user_agent.toLowerCase();
+
+    // Check for mobile devices
+    if (/mobile|iphone|ipod|android.*mobile|windows phone|blackberry/i.test(ua)) {
+      return 'mobile';
+    }
+
+    // Check for tablets
+    if (/tablet|ipad|android(?!.*mobile)|kindle|silk/i.test(ua)) {
+      return 'tablet';
+    }
+
+    // Check for desktop indicators
+    if (/windows|macintosh|linux|cros/i.test(ua)) {
+      return 'desktop';
+    }
+
+    return 'unknown';
+  }
+
+  /**
+   * Parse allowed admin emails from environment variable
+   * Returns lowercase, trimmed array of admin emails
+   */
+  private getAllowedAdminEmails(): string[] {
+    const admin_emails_raw = env.ADMIN_EMAILS || '';
+    return admin_emails_raw
+      .split(',')
+      .map((email: string) => email.trim().toLowerCase())
+      .filter((email: string) => email.length > 0);
+  }
 
   // ============================================
   // USER REGISTRATION (Player/Organizer)
@@ -122,7 +157,7 @@ export class UserService {
             risk_score: 90
           }
         });
-        throw new Error('INVALID_ROLE');
+        throw new Error(AUTH_ERROR_CODES.INVALID_ROLE);
       }
 
       // Check if email already exists
@@ -138,7 +173,7 @@ export class UserService {
             failure_reason: 'Email already exists'
           }
         });
-        throw new Error('EMAIL_ALREADY_EXISTS');
+        throw new Error(AUTH_ERROR_CODES.EMAIL_ALREADY_EXISTS);
       }
 
       // Check if username already exists
@@ -154,7 +189,7 @@ export class UserService {
             failure_reason: 'Username already exists'
           }
         });
-        throw new Error('USERNAME_ALREADY_EXISTS');
+        throw new Error(AUTH_ERROR_CODES.USERNAME_ALREADY_EXISTS);
       }
 
       // Validate password strength
@@ -170,13 +205,13 @@ export class UserService {
             failure_reason: `Weak password: ${password_validation.errors.join(', ')}`
           }
         });
-        throw new Error(`WEAK_PASSWORD:${password_validation.errors.join('|')}`);
+        throw new Error(`${AUTH_ERROR_CODES.WEAK_PASSWORD}:${password_validation.errors.join('|')}`);
       }
 
       // Check if password is breached
       const is_breached = await PasswordService.checkPasswordBreach(userData.password);
       if (is_breached) {
-        throw new Error('PASSWORD_COMPROMISED');
+        throw new Error(AUTH_ERROR_CODES.PASSWORD_COMPROMISED);
       }
 
       // Hash password
@@ -308,6 +343,7 @@ export class UserService {
       });
 
       if (!user) {
+        // Log failed attempt for non-existent user
         await AuditService.logAuthEvent({
           event_type: 'login_failed',
           success: false,
@@ -315,10 +351,10 @@ export class UserService {
           metadata: {
             ip_address: credentials.ip_address,
             user_agent: credentials.user_agent,
-            failure_reason: 'User not found or inactive'
+            failure_reason: 'User not found'
           }
         });
-        return { success: false, error: 'Invalid credentials', error_code: 'INVALID_CREDENTIALS' };
+        return { success: false, error: 'Invalid email or password', error_code: 'INVALID_CREDENTIALS' };
       }
 
       // Check if banned
@@ -335,7 +371,7 @@ export class UserService {
         });
         return { 
           success: false, 
-          error: user.banned_reason || 'Account is banned',
+          error: user.banned_reason || 'Account is suspended',
           error_code: 'ACCOUNT_BANNED'
         };
       }
@@ -345,26 +381,16 @@ export class UserService {
 
       // Check if account is locked
       if (security?.lockout.is_locked && security.lockout.locked_until) {
-        if (security.lockout.locked_until > new Date()) {
-          await AuditService.logAuthEvent({
-            user_id: user._id.toString(),
-            event_type: 'login_failed',
-            success: false,
-            metadata: {
-              ip_address: credentials.ip_address,
-              user_agent: credentials.user_agent,
-              failure_reason: 'Account locked'
-            }
-          });
+        if (new Date() < security.lockout.locked_until) {
           return {
             success: false,
-            error: 'Account is temporarily locked',
+            error: 'Account is temporarily locked due to too many failed attempts',
             error_code: 'ACCOUNT_LOCKED',
             is_locked: true,
             lock_until: security.lockout.locked_until
           };
         } else {
-          // Lock expired, reset
+          // Lockout expired, reset it
           await this.resetLockout(user._id.toString());
         }
       }
@@ -377,14 +403,14 @@ export class UserService {
 
       if (!is_password_valid) {
         await this.handleFailedLogin(user._id.toString(), credentials, 'user');
-        return { success: false, error: 'Invalid credentials', error_code: 'INVALID_CREDENTIALS' };
+        return { success: false, error: 'Invalid email or password', error_code: 'INVALID_CREDENTIALS' };
       }
 
       // Check if email verification is required
       if (!user.verification_status.email_verified) {
         return {
           success: false,
-          error: 'Please verify your email address',
+          error: 'Please verify your email before logging in',
           error_code: 'EMAIL_NOT_VERIFIED',
           requires_email_verification: true,
           user
@@ -402,7 +428,10 @@ export class UserService {
         };
       }
 
-      // Successful login - generate tokens
+      // SINGLE SESSION ENFORCEMENT: Revoke all existing sessions before creating new one
+      await this.enforceSessionLimit(user._id.toString(), credentials);
+
+      // Create new session
       const token_pair = await sessionService.createUserSession(
         user._id.toString(),
         user.email,
@@ -512,43 +541,10 @@ export class UserService {
       });
 
       if (!admin) {
-        // Check if user exists but isn't admin yet (first time setup)
-        const existing_user = await User.findOne({ email: credentials.email.toLowerCase() });
-        
-        if (!existing_user) {
-          // Admin doesn't exist - this is the first login, need to create
-          await AuditService.logAuthEvent({
-            event_type: 'login_failed',
-            success: false,
-            identifier: credentials.email,
-            metadata: {
-              ip_address: credentials.ip_address,
-              user_agent: credentials.user_agent,
-              failure_reason: 'Admin account not set up'
-            }
-          });
-          return {
-            success: false,
-            error: 'Admin account not set up. Please contact system administrator.',
-            error_code: 'ADMIN_NOT_SETUP',
-            is_admin: false
-          };
-        }
-
-        // User exists but not as admin
-        await AuditService.logSuspiciousActivity(
-          existing_user._id.toString(),
-          'Non-admin user attempted admin login',
-          {
-            ip_address: credentials.ip_address,
-            user_agent: credentials.user_agent,
-            risk_factors: ['role_mismatch', 'admin_endpoint_misuse']
-          }
-        );
         return {
           success: false,
-          error: 'Invalid credentials',
-          error_code: 'INVALID_CREDENTIALS',
+          error: 'Admin account not set up. Please contact system administrator.',
+          error_code: 'ADMIN_NOT_SETUP',
           is_admin: false
         };
       }
@@ -558,17 +554,7 @@ export class UserService {
 
       // Check if admin account is locked (stricter lockout)
       if (security?.lockout.is_locked && security.lockout.locked_until) {
-        if (security.lockout.locked_until > new Date()) {
-          await AuditService.logAuthEvent({
-            user_id: admin._id.toString(),
-            event_type: 'login_failed',
-            success: false,
-            metadata: {
-              ip_address: credentials.ip_address,
-              user_agent: credentials.user_agent,
-              failure_reason: 'Admin account locked'
-            }
-          });
+        if (new Date() < security.lockout.locked_until) {
           return {
             success: false,
             error: 'Admin account is temporarily locked',
@@ -590,55 +576,41 @@ export class UserService {
 
       if (!is_password_valid) {
         await this.handleFailedLogin(admin._id.toString(), credentials, 'admin');
-        
-        // Track failed admin attempts in Redis too
-        await redisManager.trackFailedAttempt(`admin:${credentials.email}`);
-        
         return {
           success: false,
           error: 'Invalid credentials',
           error_code: 'INVALID_CREDENTIALS',
-          is_admin: false
+          is_admin: true
         };
       }
 
-      // // Check if 2FA is enabled (highly recommended for admin)
-      // if (security?.two_factor.is_enabled) {
-      //   return {
-      //     success: false,
-      //     error: '2FA verification required',
-      //     error_code: '2FA_REQUIRED',
-      //     requires_2fa: true,
-      //     user: admin,
-      //     is_admin: true
-      //   };
-      // }
-
-
       // Check if 2FA setup is required but not completed
-      if (security?.two_factor.setup_required && !security?.two_factor.is_enabled) {
+      if (security?.two_factor.setup_required && !security.two_factor.is_enabled) {
         return {
           success: false,
-          error: 'Please complete 2FA setup before proceeding',
+          error: 'Please complete 2FA setup to continue',
           error_code: '2FA_SETUP_REQUIRED',
-          requires_2fa: true,  // ← Frontend shows QR code
           user: admin,
           is_admin: true
         };
       }
 
-      // Check if 2FA is enabled (mandatory for admin)
-      if (!security?.two_factor.is_enabled) {
+      // Check if 2FA is enabled
+      if (security?.two_factor.is_enabled) {
         return {
           success: false,
-          error: '2FA must be enabled for admin accounts',
-          error_code: '2FA_NOT_ENABLED',
+          error: '2FA verification required',
+          error_code: '2FA_REQUIRED',
+          requires_2fa: true,
+          user: admin,
           is_admin: true
         };
       }
 
+      // SINGLE SESSION ENFORCEMENT: Revoke all existing admin sessions
+      await this.enforceSessionLimit(admin._id.toString(), credentials);
 
-      // Successful admin login - generate admin tokens
+      // Create admin session
       const token_pair = await sessionService.createAdminSession(
         admin._id.toString(),
         admin.email,
@@ -648,21 +620,8 @@ export class UserService {
       // Update login stats
       await this.handleSuccessfulLogin(admin._id.toString(), credentials);
 
-      // Reset rate limits
+      // Reset rate limit
       await redisManager.resetRateLimit(`admin:${credentials.email}`, 'login');
-      await redisManager.resetFailedAttempts(`admin:${credentials.email}`);
-
-      // Log successful admin login
-      await AuditService.logAuthEvent({
-        user_id: admin._id.toString(),
-        event_type: 'login_success',
-        success: true,
-        metadata: {
-          ip_address: credentials.ip_address,
-          user_agent: credentials.user_agent,
-          is_suspicious: false
-        }
-      });
 
       logger.info('Admin login successful', { user_id: admin._id, email: admin.email });
 
@@ -685,533 +644,50 @@ export class UserService {
   }
 
   /**
-   * Setup new admin account (called by super admin or system setup)
-   * Admin emails must be in ADMIN_EMAILS env variable
+   * Enforce session limit - Revoke all existing sessions before creating new one
    */
-  async setupAdminAccount(
-    email: string,
-    password: string,
-    admin_data: { first_name: string; last_name: string; username: string },
-    device_context: DeviceContext
-  ): Promise<IApexUser> {
-    try {
-      logger.info('Setting up admin account', { email });
-
-      // Verify email is in allowed admin list
-      const allowed_admin_emails = this.getAllowedAdminEmails();
-      if (!allowed_admin_emails.includes(email.toLowerCase())) {
-        await AuditService.logSuspiciousActivity(
-          undefined,
-          'Unauthorized admin setup attempt',
-          {
-            ip_address: device_context.ip_address,
-            user_agent: device_context.user_agent,
-            risk_factors: ['unauthorized_admin_setup', 'email_not_whitelisted'],
-            attempted_email: email
-          }
-        );
-        throw new Error('UNAUTHORIZED_ADMIN_EMAIL');
-      }
-
-      // Check if admin already exists
-      const existing_admin = await User.findOne({ email: email.toLowerCase() });
-      if (existing_admin) {
-        throw new Error('ADMIN_ALREADY_EXISTS');
-      }
-
-      // Validate password (stricter for admin)
-      const password_validation = PasswordService.validatePasswordStrength(password);
-      if (!password_validation.is_valid || (password_validation.strength_score || 0) < 80) {
-        throw new Error('ADMIN_PASSWORD_TOO_WEAK');
-      }
-
-      // Hash password
-      const password_hash = await PasswordService.hashPassword(password);
-
-      // Create admin user
-      const admin = await User.create({
-        email: email.toLowerCase(),
-        username: admin_data.username.toLowerCase(),
-        password_hash,
-        role: 'admin',
-        profile: {
-          first_name: admin_data.first_name,
-          last_name: admin_data.last_name,
-          country: 'GH'
-        },
-        verification_status: {
-          email_verified: true, // Admins are pre-verified
-          phone_verified: false,
-          identity_verified: true,
-          organizer_verified: false
-        },
-        is_active: true,
-        is_banned: false
-      });
-
-      // Create security record with stricter defaults
-      await UserSecurity.create({
-        user_id: admin._id,
-        lockout: {
-          is_locked: false,
-          failed_login_attempts: 0
-        },
-        two_factor: {
-          is_enabled: false, // Should be enabled after first login
-          method: 'none',
-          setup_required: true
-        },
-        password: {
-          last_changed_at: new Date(),
-          change_required: false,
-          strength_score: password_validation.strength_score
-        },
-        max_allowed_sessions: 2, // Stricter for admin
-        risk: {
-          current_risk_level: 'low',
-          risk_score: 0,
-          last_assessed_at: new Date()
-        },
-        security_notifications: {
-          login_from_new_device: true,
-          login_from_new_location: true,
-          password_changed: true,
-          email_changed: true,
-          failed_login_attempts: true,
-          account_locked: true,
-          withdrawal_requested: true
-        },
-        withdrawal_security: {
-          require_2fa: true,
-          require_otp: true,
-          cooling_period_hours: 48
-        }
-      });
-
-      await AuditService.logAuthEvent({
-        user_id: admin._id.toString(),
-        event_type: 'registration_completed',
-        success: true,
-        metadata: {
-          ip_address: device_context.ip_address,
-          user_agent: device_context.user_agent
-        }
-      });
-
-      logger.info('Admin account set up successfully', { user_id: admin._id, email: admin.email });
-
-      return admin;
-    } catch (error: any) {
-      logger.error('Error setting up admin account:', error);
-      throw error;
-    }
-  }
-
-  // ============================================
-  // USER PROFILE MANAGEMENT
-  // ============================================
-
-  /**
-   * Get user profile by ID
-   */
-  async getUserProfile(user_id: string): Promise<IApexUser | null> {
-    try {
-      return await User.findById(user_id).select('-password_hash');
-    } catch (error: any) {
-      logger.error('Error getting user profile:', error);
-      throw new Error('USER_PROFILE_FETCH_FAILED');
-    }
-  }
-
-  /**
-   * Get user by email
-   */
-  async getUserByEmail(email: string): Promise<IApexUser | null> {
-    try {
-      return await User.findOne({ email: email.toLowerCase() }).select('-password_hash');
-    } catch (error: any) {
-      logger.error('Error getting user by email:', error);
-      throw new Error('USER_FETCH_FAILED');
-    }
-  }
-
-  /**
-   * Get user by username
-   */
-  async getUserByUsername(username: string): Promise<IApexUser | null> {
-    try {
-      return await User.findOne({ username: username.toLowerCase() }).select('-password_hash');
-    } catch (error: any) {
-      logger.error('Error getting user by username:', error);
-      throw new Error('USER_FETCH_FAILED');
-    }
-  }
-
-  /**
-   * Update user profile
-   */
-  async updateUserProfile(
+  private async enforceSessionLimit(
     user_id: string,
-    updates: UpdateProfileData,
-    device_context: DeviceContext
-  ): Promise<IApexUser> {
-    try {
-      const user = await User.findById(user_id);
-      if (!user) {
-        throw new Error('USER_NOT_FOUND');
-      }
-
-      // Update profile fields
-      if (updates.first_name) user.profile.first_name = updates.first_name;
-      if (updates.last_name) user.profile.last_name = updates.last_name;
-      if (updates.bio !== undefined) user.profile.bio = updates.bio;
-      if (updates.phone_number) user.profile.phone_number = updates.phone_number;
-      if (updates.country) user.profile.country = updates.country;
-      if (updates.social_links) {
-        user.profile.social_links = {
-          ...user.profile.social_links,
-          ...updates.social_links
-        };
-      }
-
-      await user.save();
-
-      logger.info('User profile updated', { user_id });
-
-      return user;
-    } catch (error: any) {
-      logger.error('Error updating user profile:', error);
-      throw error;
-    }
-  }
-
-  // ============================================
-  // PASSWORD MANAGEMENT
-  // ============================================
-
-  /**
-   * Change user password
-   */
-  async changePassword(
-    user_id: string,
-    current_password: string,
-    new_password: string,
-    device_context: DeviceContext
+    credentials: LoginCredentials
   ): Promise<void> {
     try {
-      const user = await User.findById(user_id);
-      if (!user) {
-        throw new Error('USER_NOT_FOUND');
-      }
+      const active_sessions = await RefreshToken.countDocuments({
+        user_id,
+        is_revoked: false,
+        expires_at: { $gt: new Date() }
+      });
 
-      // Verify current password
-      const is_current_valid = await PasswordService.comparePassword(
-        current_password,
-        user.password_hash
-      );
+      if (active_sessions > 0) {
+        logger.info('Enforcing session limit - revoking existing sessions', {
+          user_id,
+          existing_sessions: active_sessions,
+          max_allowed: this.MAX_SESSIONS
+        });
 
-      if (!is_current_valid) {
+        await tokenService.revokeAllUserTokens(user_id, 'logout');
+
         await AuditService.logAuthEvent({
-          user_id: user._id.toString(),
-          event_type: 'password_change_failed',
-          success: false,
+          user_id,
+          event_type: 'logout_all_devices',
+          success: true,
           metadata: {
-            ip_address: device_context.ip_address,
-            user_agent: device_context.user_agent,
-            failure_reason: 'Current password incorrect'
+            ip_address: credentials.ip_address,
+            user_agent: credentials.user_agent,
+            failure_reason: `New login - session limit (${this.MAX_SESSIONS}) enforcement`
           }
         });
-        throw new Error('INVALID_CURRENT_PASSWORD');
       }
 
-      // Validate new password strength
-      const password_validation = PasswordService.validatePasswordStrength(new_password);
-      if (!password_validation.is_valid) {
-        throw new Error(`WEAK_PASSWORD:${password_validation.errors.join('|')}`);
-      }
-
-      // Check password history (prevent reuse)
-      const security = await UserSecurity.findOne({ user_id: user._id });
-      if (security?.password.previous_hashes) {
-        const is_reused = await PasswordService.isPasswordReused(
-          new_password,
-          security.password.previous_hashes
-        );
-        if (is_reused) {
-          throw new Error('PASSWORD_RECENTLY_USED');
+      await UserSecurity.findOneAndUpdate(
+        { user_id },
+        {
+          active_sessions_count: 0,
+          last_session_created_at: new Date()
         }
-      }
-
-      // Hash and update password
-      const new_hash = await PasswordService.hashPassword(new_password);
-      const old_hash = user.password_hash;
-
-      user.password_hash = new_hash;
-      await user.save();
-
-      // Update security record
-      if (security) {
-        const previous_hashes = security.password.previous_hashes || [];
-        previous_hashes.unshift(old_hash);
-        security.password.previous_hashes = previous_hashes.slice(0, 5); // Keep last 5
-        security.password.last_changed_at = new Date();
-        security.password.strength_score = password_validation.strength_score;
-        await security.save();
-      }
-
-      // Revoke all existing tokens (security measure)
-      await tokenService.revokeAllUserTokens(user_id, 'password_change');
-
-      await AuditService.logAuthEvent({
-        user_id: user._id.toString(),
-        event_type: 'password_change_success',
-        success: true,
-        metadata: {
-          ip_address: device_context.ip_address,
-          user_agent: device_context.user_agent
-        }
-      });
-
-      logger.info('Password changed successfully', { user_id });
+      );
     } catch (error: any) {
-      logger.error('Error changing password:', error);
-      throw error;
+      logger.error('Error enforcing session limit:', error);
     }
-  }
-
-  // ============================================
-  // ACCOUNT MANAGEMENT
-  // ============================================
-
-  /**
-   * Verify user email
-   */
-  async verifyUserEmail(user_id: string): Promise<void> {
-    try {
-      await User.findByIdAndUpdate(user_id, {
-        'verification_status.email_verified': true,
-        'verification_status.verified_at': new Date()
-      });
-
-      logger.info('User email verified', { user_id });
-    } catch (error: any) {
-      logger.error('Error verifying user email:', error);
-      throw new Error('EMAIL_VERIFICATION_FAILED');
-    }
-  }
-
-  /**
-   * Deactivate user account
-   */
-  async deactivateAccount(user_id: string, device_context: DeviceContext): Promise<void> {
-    try {
-      const user = await User.findById(user_id);
-      if (!user) {
-        throw new Error('USER_NOT_FOUND');
-      }
-
-      user.is_active = false;
-      await user.save();
-
-      // Revoke all tokens
-      await tokenService.revokeAllUserTokens(user_id, 'logout');
-
-      await AuditService.logAuthEvent({
-        user_id: user._id.toString(),
-        event_type: 'account_deactivated',
-        success: true,
-        metadata: {
-          ip_address: device_context.ip_address,
-          user_agent: device_context.user_agent
-        }
-      });
-
-      logger.info('User account deactivated', { user_id });
-    } catch (error: any) {
-      logger.error('Error deactivating account:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Reactivate user account
-   */
-  async reactivateAccount(user_id: string, device_context: DeviceContext): Promise<void> {
-    try {
-      await User.findByIdAndUpdate(user_id, { is_active: true });
-
-      await AuditService.logAuthEvent({
-        user_id,
-        event_type: 'account_reactivated',
-        success: true,
-        metadata: {
-          ip_address: device_context.ip_address,
-          user_agent: device_context.user_agent
-        }
-      });
-
-      logger.info('User account reactivated', { user_id });
-    } catch (error: any) {
-      logger.error('Error reactivating account:', error);
-      throw error;
-    }
-  }
-
-  // ============================================
-  // 2FA LOGIN COMPLETION
-  // ============================================
-
-  /**
-   * Complete login after 2FA verification (for users)
-   */
-  async complete2FALogin(
-    user_id: string,
-    code: string,
-    use_backup_code: boolean,
-    device_context: DeviceContext
-  ): Promise<Complete2FALoginResult> {
-    try {
-      logger.info('Completing 2FA login', { user_id, use_backup_code });
-
-      const device_info = {
-        ip_address: device_context.ip_address,
-        user_agent: device_context.user_agent,
-        device_type: this.detectDeviceType(device_context.user_agent) as 'mobile' | 'tablet' | 'desktop' | 'unknown'
-      };
-
-      // Verify 2FA code
-      let verification;
-      if (use_backup_code) {
-        verification = await twoFactorService.verifyBackupCode(user_id, code, device_context);
-      } else {
-        verification = await twoFactorService.verifyTOTPCode(user_id, code, device_context);
-      }
-
-      if (!verification.valid) {
-        return {
-          success: false,
-          error: verification.error === 'INVALID_CODE' ? 'Invalid verification code' : 'Verification failed',
-          error_code: verification.error
-        };
-      }
-
-      // Get user
-      const user = await User.findById(user_id);
-      if (!user || !user.is_active) {
-        return {
-          success: false,
-          error: 'User not found or inactive',
-          error_code: 'USER_NOT_FOUND'
-        };
-      }
-
-      // Generate tokens based on role
-      let token_pair;
-      if (user.role === 'admin') {
-        token_pair = await sessionService.createAdminSession(
-          user._id.toString(),
-          user.email,
-          device_info
-        );
-      } else {
-        token_pair = await sessionService.createUserSession(
-          user._id.toString(),
-          user.email,
-          user.role as 'player' | 'organizer',
-          device_info
-        );
-      }
-
-      // Update login stats
-      await this.handleSuccessfulLogin(user._id.toString(), {
-        email: user.email,
-        password: '',
-        ip_address: device_context.ip_address,
-        user_agent: device_context.user_agent
-      });
-
-      logger.info('2FA login completed successfully', { user_id, role: user.role });
-
-      return {
-        success: true,
-        user,
-        access_token: token_pair.accessToken,
-        refresh_token: token_pair.refreshToken
-      };
-    } catch (error: any) {
-      logger.error('Error completing 2FA login:', error);
-      return {
-        success: false,
-        error: 'Login failed',
-        error_code: '2FA_LOGIN_FAILED'
-      };
-    }
-  }
-
-  /**
-   * Complete admin login after 2FA verification
-   */
-  async completeAdmin2FALogin(
-    user_id: string,
-    code: string,
-    use_backup_code: boolean,
-    device_context: DeviceContext
-  ): Promise<Complete2FALoginResult & { is_admin: boolean }> {
-    try {
-      logger.info('Completing admin 2FA login', { user_id });
-
-      // Verify user is admin
-      const admin = await User.findOne({ _id: user_id, role: 'admin', is_active: true });
-      if (!admin) {
-        return {
-          success: false,
-          error: 'Admin not found',
-          error_code: 'ADMIN_NOT_FOUND',
-          is_admin: false
-        };
-      }
-
-      const result = await this.complete2FALogin(user_id, code, use_backup_code, device_context);
-
-      return {
-        ...result,
-        is_admin: result.success
-      };
-    } catch (error: any) {
-      logger.error('Error completing admin 2FA login:', error);
-      return {
-        success: false,
-        error: 'Login failed',
-        error_code: 'ADMIN_2FA_LOGIN_FAILED',
-        is_admin: false
-      };
-    }
-  }
-
-  // ============================================
-  // HELPER METHODS
-  // ============================================
-
-  /**
-   * Get allowed admin emails from environment
-   */
-  private getAllowedAdminEmails(): string[] {
-    const admin_emails_raw = env.ADMIN_EMAILS || '';
-    return admin_emails_raw
-      .split(',')
-      .map((email: string) => email.trim().toLowerCase())
-      .filter((email: string) => email.length > 0);
-  }
-
-  /**
-   * Detect device type from user agent
-   */
-  private detectDeviceType(user_agent: string): string {
-    const ua = user_agent.toLowerCase();
-    if (/mobile|android|iphone|ipad|phone/i.test(ua)) {
-      return /tablet|ipad/i.test(ua) ? 'tablet' : 'mobile';
-    }
-    return 'desktop';
   }
 
   /**
@@ -1222,11 +698,41 @@ export class UserService {
     credentials: LoginCredentials,
     user_type: 'user' | 'admin'
   ): Promise<void> {
-    const max_attempts = user_type === 'admin' ? this.MAX_FAILED_ATTEMPTS_ADMIN : this.MAX_FAILED_ATTEMPTS_USER;
-    const lock_time = user_type === 'admin' ? this.LOCK_TIME_ADMIN : this.LOCK_TIME_USER;
+    const max_attempts = user_type === 'admin' 
+      ? this.MAX_FAILED_ATTEMPTS_ADMIN 
+      : this.MAX_FAILED_ATTEMPTS_USER;
+    const lock_time = user_type === 'admin' 
+      ? this.LOCK_TIME_ADMIN 
+      : this.LOCK_TIME_USER;
 
-    const security = await UserSecurity.findOne({ user_id });
-    if (!security) return;
+    let security = await UserSecurity.findOne({ user_id });
+    
+    if (!security) {
+      security = await UserSecurity.create({
+        user_id,
+        lockout: {
+          is_locked: false,
+          failed_login_attempts: 1,
+          last_failed_attempt_at: new Date()
+        },
+        two_factor: { method: 'none' },
+        risk: { current_risk_level: 'low', risk_score: 0, last_assessed_at: new Date() },
+        activity_summary: { total_logins: 0 }
+      });
+
+      await AuditService.logAuthEvent({
+        user_id,
+        event_type: 'login_failed',
+        success: false,
+        metadata: {
+          ip_address: credentials.ip_address,
+          user_agent: credentials.user_agent,
+          failure_reason: 'Invalid password'
+        }
+      });
+      
+      return;
+    }
 
     security.lockout.failed_login_attempts += 1;
     security.lockout.last_failed_attempt_at = new Date();
@@ -1240,11 +746,12 @@ export class UserService {
       await AuditService.logAuthEvent({
         user_id,
         event_type: 'account_locked',
-        success: false,
+        success: true,
         metadata: {
           ip_address: credentials.ip_address,
           user_agent: credentials.user_agent,
-          failure_reason: 'Too many failed login attempts'
+          failure_reason: `Max failed login attempts (${max_attempts}) reached`,
+          lock_duration_minutes: lock_time / 60000
         }
       });
     }
@@ -1258,7 +765,8 @@ export class UserService {
       metadata: {
         ip_address: credentials.ip_address,
         user_agent: credentials.user_agent,
-        failure_reason: 'Invalid password'
+        failure_reason: 'Invalid password',
+        attempts_remaining: Math.max(0, max_attempts - security.lockout.failed_login_attempts)
       }
     });
   }
@@ -1299,6 +807,550 @@ export class UserService {
         'lockout.failed_login_attempts': 0
       }
     );
+  }
+
+  // ============================================
+  // USER LOOKUP METHODS
+  // ============================================
+
+  /**
+   * Get user by email
+   */
+  async getUserByEmail(email: string): Promise<IApexUser | null> {
+    try {
+      return await User.findOne({ email: email.toLowerCase() });
+    } catch (error: any) {
+      logger.error('Error getting user by email:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user by username
+   */
+  async getUserByUsername(username: string): Promise<IApexUser | null> {
+    try {
+      return await User.findOne({ username: username.toLowerCase() });
+    } catch (error: any) {
+      logger.error('Error getting user by username:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user by ID
+   */
+  async getUserById(user_id: string): Promise<IApexUser | null> {
+    try {
+      return await User.findById(user_id);
+    } catch (error: any) {
+      logger.error('Error getting user by ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user profile (includes password_hash for verification purposes)
+   */
+  async getUserProfile(user_id: string): Promise<IApexUser | null> {
+    try {
+      return await User.findById(user_id);
+    } catch (error: any) {
+      logger.error('Error getting user profile:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // USER UPDATE METHODS
+  // ============================================
+
+  /**
+   * Update user profile
+   */
+  async updateUserProfile(
+    user_id: string,
+    updates: UpdateProfileData,
+    device_context: { ip_address: string; user_agent: string }
+  ): Promise<IApexUser> {
+    try {
+      const user = await User.findById(user_id);
+      if (!user) {
+        throw new Error('USER_NOT_FOUND');
+      }
+
+      // Build update object for profile fields only
+      const profile_updates: Record<string, any> = {};
+
+      if (updates.first_name !== undefined) {
+        profile_updates['profile.first_name'] = updates.first_name;
+      }
+      if (updates.last_name !== undefined) {
+        profile_updates['profile.last_name'] = updates.last_name;
+      }
+      if (updates.bio !== undefined) {
+        profile_updates['profile.bio'] = updates.bio;
+      }
+      if (updates.phone_number !== undefined) {
+        profile_updates['profile.phone_number'] = updates.phone_number;
+      }
+      if (updates.country !== undefined) {
+        profile_updates['profile.country'] = updates.country;
+      }
+      if (updates.social_links !== undefined) {
+        if (updates.social_links.discord !== undefined) {
+          profile_updates['profile.social_links.discord'] = updates.social_links.discord;
+        }
+        if (updates.social_links.twitter !== undefined) {
+          profile_updates['profile.social_links.twitter'] = updates.social_links.twitter;
+        }
+        if (updates.social_links.twitch !== undefined) {
+          profile_updates['profile.social_links.twitch'] = updates.social_links.twitch;
+        }
+        if (updates.social_links.youtube !== undefined) {
+          profile_updates['profile.social_links.youtube'] = updates.social_links.youtube;
+        }
+      }
+
+      const updated_user = await User.findByIdAndUpdate(
+        user_id,
+        { $set: profile_updates },
+        { new: true }
+      );
+
+      if (!updated_user) {
+        throw new Error('USER_NOT_FOUND');
+      }
+
+      logger.info('User profile updated', { user_id, updates: Object.keys(profile_updates) });
+
+      return updated_user;
+    } catch (error: any) {
+      logger.error('Error updating user profile:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // EMAIL VERIFICATION
+  // ============================================
+
+  /**
+   * Mark user's email as verified
+   */
+  async verifyUserEmail(user_id: string): Promise<void> {
+    try {
+      await User.findByIdAndUpdate(user_id, {
+        'verification_status.email_verified': true,
+        'verification_status.verified_at': new Date()
+      });
+
+      logger.info('User email verified', { user_id });
+    } catch (error: any) {
+      logger.error('Error verifying user email:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ACCOUNT MANAGEMENT
+  // ============================================
+
+  /**
+   * Deactivate user account
+   */
+  async deactivateAccount(
+    user_id: string,
+    device_context: { ip_address: string; user_agent: string }
+  ): Promise<void> {
+    try {
+      const user = await User.findById(user_id);
+      if (!user) {
+        throw new Error('USER_NOT_FOUND');
+      }
+
+      // Deactivate the account
+      await User.findByIdAndUpdate(user_id, {
+        is_active: false
+      });
+
+      // Revoke all refresh tokens
+      await tokenService.revokeAllUserTokens(user_id, 'logout');
+
+      // Log the event
+      await AuditService.logAuthEvent({
+        user_id,
+        event_type: 'account_deactivated',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
+        }
+      });
+
+      logger.info('Account deactivated', { user_id });
+    } catch (error: any) {
+      logger.error('Error deactivating account:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reactivate user account (admin function)
+   */
+  async reactivateAccount(
+    user_id: string,
+    admin_id: string,
+    device_context: { ip_address: string; user_agent: string }
+  ): Promise<void> {
+    try {
+      const user = await User.findById(user_id);
+      if (!user) {
+        throw new Error('USER_NOT_FOUND');
+      }
+
+      await User.findByIdAndUpdate(user_id, {
+        is_active: true
+      });
+
+      await AuditService.logAuthEvent({
+        user_id,
+        event_type: 'account_reactivated',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
+          admin_id
+        }
+      });
+
+      logger.info('Account reactivated', { user_id, admin_id });
+    } catch (error: any) {
+      logger.error('Error reactivating account:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // ADMIN SETUP
+  // ============================================
+
+  /**
+   * Setup admin account (only for whitelisted emails)
+   */
+  async setupAdminAccount(
+    email: string,
+    password: string,
+    profile: { first_name: string; last_name: string; username: string },
+    device_context: { ip_address: string; user_agent: string }
+  ): Promise<IApexUser> {
+    try {
+      logger.info('Setting up admin account', { email });
+
+      // Check if admin already exists
+      const existing_admin = await User.findOne({ email: email.toLowerCase(), role: 'admin' });
+      if (existing_admin) {
+        throw new Error(AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS);
+      }
+
+      // Check if email is already used by another account
+      const existing_email = await User.findOne({ email: email.toLowerCase() });
+      if (existing_email) {
+        throw new Error(AUTH_ERROR_CODES.EMAIL_ALREADY_EXISTS);
+      }
+
+      // Check if username is already taken
+      const existing_username = await User.findOne({ username: profile.username.toLowerCase() });
+      if (existing_username) {
+        throw new Error(AUTH_ERROR_CODES.USERNAME_ALREADY_EXISTS);
+      }
+
+      // Validate password strength (stricter for admin)
+      const password_validation = PasswordService.validatePasswordStrength(password);
+      if (!password_validation.is_valid) {
+        throw new Error(AUTH_ERROR_CODES.ADMIN_PASSWORD_TOO_WEAK);
+      }
+
+      // Check if password is breached
+      const is_breached = await PasswordService.checkPasswordBreach(password);
+      if (is_breached) {
+        throw new Error(AUTH_ERROR_CODES.PASSWORD_COMPROMISED);
+      }
+
+      // Hash password
+      const password_hash = await PasswordService.hashPassword(password);
+
+      // Create admin user
+      const admin = await User.create({
+        email: email.toLowerCase(),
+        username: profile.username.toLowerCase(),
+        password_hash,
+        role: 'admin',
+        profile: {
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          country: 'GH'
+        },
+        verification_status: {
+          email_verified: true, // Admin emails are pre-verified
+          phone_verified: false,
+          identity_verified: true,
+          organizer_verified: true
+        },
+        is_active: true,
+        is_banned: false
+      });
+
+      // Create admin security record with 2FA setup required
+      await UserSecurity.create({
+        user_id: admin._id,
+        lockout: {
+          is_locked: false,
+          failed_login_attempts: 0
+        },
+        two_factor: {
+          is_enabled: false,
+          method: 'none',
+          setup_required: true // Force 2FA setup for admin
+        },
+        password: {
+          last_changed_at: new Date(),
+          change_required: false,
+          strength_score: password_validation.strength_score
+        },
+        risk: {
+          current_risk_level: 'low',
+          risk_score: 0,
+          last_assessed_at: new Date()
+        },
+        security_notifications: {
+          login_from_new_device: true,
+          login_from_new_location: true,
+          password_changed: true,
+          email_changed: true,
+          failed_login_attempts: true,
+          account_locked: true,
+          withdrawal_requested: true
+        }
+      });
+
+      // Log admin creation
+      await AuditService.logAuthEvent({
+        user_id: admin._id.toString(),
+        event_type: 'registration_completed',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
+          admin_id: 'system',
+          admin_reason: 'Admin account setup'
+        }
+      });
+
+      logger.info('Admin account created successfully', { user_id: admin._id, email: admin.email });
+
+      return admin;
+    } catch (error: any) {
+      logger.error('Error setting up admin account:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // 2FA LOGIN COMPLETION
+  // ============================================
+
+  /**
+   * Complete user login after 2FA verification
+   */
+  async complete2FALogin(
+    user_id: string,
+    code: string,
+    use_backup_code: boolean,
+    device_context: DeviceContext
+  ): Promise<Complete2FALoginResult> {
+    try {
+      logger.info('Completing 2FA login', { user_id });
+
+      // Get user
+      const user = await User.findById(user_id);
+      if (!user) {
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND, error_code: AUTH_ERROR_CODES.USER_NOT_FOUND };
+      }
+
+      // Verify user is not admin (admins use separate flow)
+      if (user.role === 'admin') {
+        return { success: false, error: AUTH_ERROR_CODES.INVALID_FLOW, error_code: AUTH_ERROR_CODES.INVALID_FLOW };
+      }
+
+      // Check if user is active and not banned
+      if (!user.is_active) {
+        return { success: false, error: AUTH_ERROR_CODES.ACCOUNT_INACTIVE, error_code: AUTH_ERROR_CODES.ACCOUNT_INACTIVE };
+      }
+      if (user.is_banned) {
+        return { success: false, error: user.banned_reason || AUTH_ERROR_CODES.ACCOUNT_BANNED, error_code: AUTH_ERROR_CODES.ACCOUNT_BANNED };
+      }
+
+      // Verify 2FA code
+      let verification_result;
+      if (use_backup_code) {
+        verification_result = await twoFactorService.verifyBackupCode(user_id, code, device_context);
+      } else {
+        verification_result = await twoFactorService.verifyTOTPCode(user_id, code, device_context);
+      }
+
+      if (!verification_result.valid) {
+        return {
+          success: false,
+          error: verification_result.error === AUTH_ERROR_CODES.TWO_FA_INVALID_CODE
+            ? 'Invalid verification code'
+            : 'Verification failed',
+          error_code: verification_result.error || AUTH_ERROR_CODES.TWO_FA_VERIFICATION_FAILED
+        };
+      }
+
+      const device_info = {
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent,
+        device_type: this.detectDeviceType(device_context.user_agent) as 'mobile' | 'tablet' | 'desktop' | 'unknown'
+      };
+
+      // Enforce session limit
+      await this.enforceSessionLimit(user_id, {
+        email: user.email,
+        password: '',
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent
+      });
+
+      // Create session
+      const token_pair = await sessionService.createUserSession(
+        user_id,
+        user.email,
+        user.role as 'player' | 'organizer',
+        device_info
+      );
+
+      // Update login stats
+      await this.handleSuccessfulLogin(user_id, {
+        email: user.email,
+        password: '',
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent
+      });
+
+      logger.info('2FA login completed successfully', { user_id, email: user.email });
+
+      return {
+        success: true,
+        user,
+        access_token: token_pair.accessToken,
+        refresh_token: token_pair.refreshToken
+      };
+    } catch (error: any) {
+      logger.error('Error completing 2FA login:', error);
+      return { success: false, error: '2FA login failed', error_code: AUTH_ERROR_CODES.TWO_FA_LOGIN_FAILED };
+    }
+  }
+
+  /**
+   * Complete admin login after 2FA verification
+   */
+  async completeAdmin2FALogin(
+    user_id: string,
+    code: string,
+    use_backup_code: boolean,
+    device_context: DeviceContext
+  ): Promise<Complete2FALoginResult> {
+    try {
+      logger.info('Completing admin 2FA login', { user_id });
+
+      // Get admin user
+      const admin = await User.findOne({ _id: user_id, role: 'admin' });
+      if (!admin) {
+        return { success: false, error: AUTH_ERROR_CODES.ADMIN_NOT_FOUND, error_code: AUTH_ERROR_CODES.ADMIN_NOT_FOUND };
+      }
+
+      // Check if admin is active
+      if (!admin.is_active) {
+        return { success: false, error: AUTH_ERROR_CODES.ACCOUNT_INACTIVE, error_code: AUTH_ERROR_CODES.ACCOUNT_INACTIVE };
+      }
+
+      // Verify 2FA code
+      let verification_result;
+      if (use_backup_code) {
+        verification_result = await twoFactorService.verifyBackupCode(user_id, code, device_context);
+      } else {
+        verification_result = await twoFactorService.verifyTOTPCode(user_id, code,  device_context);
+      }
+
+      if (!verification_result.valid) {
+        // Log failed admin 2FA attempt
+        await AuditService.logAuthEvent({
+          user_id,
+          event_type: '2fa_failed',
+          success: false,
+          metadata: {
+            ip_address: device_context.ip_address,
+            user_agent: device_context.user_agent,
+            failure_reason: verification_result.error || 'Invalid 2FA code',
+            is_suspicious: true,
+            risk_score: 60
+          }
+        });
+        return {
+          success: false,
+          error: verification_result.error === AUTH_ERROR_CODES.TWO_FA_INVALID_CODE
+            ? 'Invalid verification code'
+            : 'Verification failed',
+          error_code: verification_result.error || AUTH_ERROR_CODES.TWO_FA_VERIFICATION_FAILED
+        };
+      }
+
+      const device_info = {
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent,
+        device_type: this.detectDeviceType( device_context.user_agent) as 'mobile' | 'tablet' | 'desktop' | 'unknown'
+      };
+
+      // Enforce session limit for admin
+      await this.enforceSessionLimit(user_id, {
+        email: admin.email,
+        password: '',
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent
+      });
+
+      // Create admin session
+      const token_pair = await sessionService.createAdminSession(
+        user_id,
+        admin.email,
+        device_info
+      );
+
+      // Update login stats
+      await this.handleSuccessfulLogin(user_id, {
+        email: admin.email,
+        password: '',
+        ip_address: device_context.ip_address,
+        user_agent: device_context.user_agent
+      });
+
+      // Reset rate limit
+      await redisManager.resetRateLimit(`admin:${admin.email}`, 'login');
+
+      logger.info('Admin 2FA login completed successfully', { user_id, email: admin.email });
+
+      return {
+        success: true,
+        user: admin,
+        access_token: token_pair.accessToken,
+        refresh_token: token_pair.refreshToken
+      };
+    } catch (error: any) {
+      logger.error('Error completing admin 2FA login:', error);
+      return { success: false, error: 'Admin 2FA login failed', error_code: AUTH_ERROR_CODES.ADMIN_2FA_LOGIN_FAILED };
+    }
   }
 }
 

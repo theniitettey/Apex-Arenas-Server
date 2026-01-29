@@ -1,6 +1,8 @@
 import { tokenService, DeviceInfo, TokenPair } from './auth.token.service';
 import { AuditService } from './auth.audit.service';
+import { User } from '../../../models/user.model';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-session-service');
 
@@ -68,7 +70,7 @@ export class SessionService {
       return tokenPair;
     } catch (error: any) {
       logger.error('Error creating user session:', error);
-      throw new Error('SESSION_CREATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_CREATION_FAILED);
     }
   }
 
@@ -103,7 +105,7 @@ export class SessionService {
       return tokenPair;
     } catch (error: any) {
       logger.error('Error creating admin session:', error);
-      throw new Error('SESSION_CREATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_CREATION_FAILED);
     }
   }
 
@@ -124,7 +126,7 @@ export class SessionService {
 
       if (!verification.valid || !verification.payload) {
         logger.warn('Invalid refresh token for user session', { error: verification.error });
-        throw new Error('INVALID_REFRESH_TOKEN');
+        throw new Error(AUTH_ERROR_CODES.INVALID_REFRESH_TOKEN);
       }
 
       const { user_id, email, role } = verification.payload;
@@ -132,14 +134,51 @@ export class SessionService {
       // 2. Ensure this is not an admin token
       if (role === 'admin') {
         logger.warn('Admin token used on user refresh endpoint', { user_id });
-        throw new Error('INVALID_TOKEN_TYPE');
+        throw new Error(AUTH_ERROR_CODES.INVALID_TOKEN_TYPE);
       }
 
-      // 3. Generate new tokens (don't revoke existing yet)
+      // 3. CHECK USER STATUS - Critical security check
+      const user = await User.findById(user_id).select('is_active is_banned');
+      if (!user) {
+        logger.warn('User not found during token refresh', { user_id });
+        throw new Error(AUTH_ERROR_CODES.USER_NOT_FOUND);
+      }
+
+      if (!user.is_active) {
+        logger.warn('Inactive user attempted token refresh', { user_id });
+        await AuditService.logAuthEvent({
+          user_id,
+          event_type: 'token_revoked',
+          success: false,
+          metadata: {
+            ip_address: device_info.ip_address,
+            user_agent: device_info.user_agent,
+            failure_reason: 'Account inactive'
+          }
+        });
+        throw new Error(AUTH_ERROR_CODES.ACCOUNT_INACTIVE);
+      }
+
+      if (user.is_banned) {
+        logger.warn('Banned user attempted token refresh', { user_id });
+        await AuditService.logAuthEvent({
+          user_id,
+          event_type: 'token_revoked',
+          success: false,
+          metadata: {
+            ip_address: device_info.ip_address,
+            user_agent: device_info.user_agent,
+            failure_reason: 'Account banned'
+          }
+        });
+        throw new Error(AUTH_ERROR_CODES.ACCOUNT_BANNED);
+      }
+
+      // 4. Generate new tokens (don't revoke existing yet)
       const accessToken = await tokenService.generateUserAccessToken(user_id, email, role);
       const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, false);
 
-      // 4. Revoke the old token after new one is created
+      // 5. Revoke the old token after new one is created
       try {
         await tokenService.revokeRefreshToken(refreshToken);
       } catch (revokeError: any) {
@@ -148,7 +187,7 @@ export class SessionService {
         });
       }
 
-      // 5. Log the refresh event
+      // 6. Log the refresh event
       await AuditService.logAuthEvent({
         user_id,
         event_type: 'token_refreshed',
@@ -164,11 +203,17 @@ export class SessionService {
     } catch (error: any) {
       logger.error('Error refreshing user session:', error);
 
-      if (error.message === 'INVALID_REFRESH_TOKEN' || error.message === 'INVALID_TOKEN_TYPE') {
+      if ( [
+        AUTH_ERROR_CODES.INVALID_REFRESH_TOKEN,
+        AUTH_ERROR_CODES.INVALID_TOKEN_TYPE,
+        AUTH_ERROR_CODES.USER_NOT_FOUND,
+        AUTH_ERROR_CODES.ACCOUNT_INACTIVE,
+        AUTH_ERROR_CODES.ACCOUNT_BANNED
+      ].includes(error.message)) {
         throw error;
       }
 
-      throw new Error('SESSION_REFRESH_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_REFRESH_FAILED);
     }
   }
 
@@ -185,7 +230,7 @@ export class SessionService {
 
       if (!verification.valid || !verification.payload) {
         logger.warn('Invalid refresh token for admin session', { error: verification.error });
-        throw new Error('INVALID_REFRESH_TOKEN');
+        throw new Error(AUTH_ERROR_CODES.INVALID_REFRESH_TOKEN);
       }
 
       const { user_id, email, role } = verification.payload;
@@ -193,14 +238,53 @@ export class SessionService {
       // 2. Ensure this is an admin token
       if (role !== 'admin') {
         logger.warn('Non-admin token used on admin refresh endpoint', { user_id, role });
-        throw new Error('INVALID_TOKEN_TYPE');
+        throw new Error(AUTH_ERROR_CODES.INVALID_TOKEN_TYPE);
       }
 
-      // 3. Generate new tokens
+      // 3. CHECK ADMIN STATUS - Critical security check
+      const admin = await User.findById(user_id).select('is_active role');
+      if (!admin) {
+        logger.warn('Admin not found during token refresh', { user_id });
+        throw new Error(AUTH_ERROR_CODES.USER_NOT_FOUND);
+      }
+
+      if (!admin.is_active) {
+        logger.warn('Inactive admin attempted token refresh', { user_id });
+        await AuditService.logAuthEvent({
+          user_id,
+          event_type: 'token_revoked',
+          success: false,
+          metadata: {
+            ip_address: device_info.ip_address,
+            user_agent: device_info.user_agent,
+            failure_reason: 'Admin account inactive',
+            is_admin: true
+          }
+        });
+        throw new Error(AUTH_ERROR_CODES.ADMIN_INACTIVE);
+      }
+
+      if (admin.role !== 'admin') {
+        logger.warn('User role changed from admin during session', { user_id });
+        await AuditService.logAuthEvent({
+          user_id,
+          event_type: 'token_revoked',
+          success: false,
+          metadata: {
+            ip_address: device_info.ip_address,
+            user_agent: device_info.user_agent,
+            failure_reason: 'Admin role revoked',
+            is_admin: true
+          }
+        });
+        throw new Error(AUTH_ERROR_CODES.ADMIN_ROLE_REVOKED);
+      }
+
+      // 4. Generate new tokens
       const accessToken = await tokenService.generateAdminAccessToken(user_id, email);
       const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, false);
 
-      // 4. Revoke the old token
+      // 5. Revoke the old token
       try {
         await tokenService.revokeRefreshToken(refreshToken);
       } catch (revokeError: any) {
@@ -209,7 +293,7 @@ export class SessionService {
         });
       }
 
-      // 5. Log the refresh event
+      // 6. Log the refresh event
       await AuditService.logAuthEvent({
         user_id,
         event_type: 'token_refreshed',
@@ -226,11 +310,17 @@ export class SessionService {
     } catch (error: any) {
       logger.error('Error refreshing admin session:', error);
 
-      if (error.message === 'INVALID_REFRESH_TOKEN' || error.message === 'INVALID_TOKEN_TYPE') {
+      if ( [
+        AUTH_ERROR_CODES.INVALID_REFRESH_TOKEN,
+        AUTH_ERROR_CODES.INVALID_TOKEN_TYPE,
+        AUTH_ERROR_CODES.USER_NOT_FOUND,
+        AUTH_ERROR_CODES.ADMIN_INACTIVE,
+        'ADMIN_ROLE_REVOKED'
+      ].includes(error.message)) {
         throw error;
       }
 
-      throw new Error('SESSION_REFRESH_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_REFRESH_FAILED);
     }
   }
 
@@ -309,7 +399,7 @@ export class SessionService {
       logger.info('Session revoked', { user_id });
     } catch (error: any) {
       logger.error('Error revoking session:', error);
-      throw new Error('SESSION_REVOCATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_REVOKE_FAILED);
     }
   }
 
@@ -372,7 +462,7 @@ export class SessionService {
       return revoked;
     } catch (error: any) {
       logger.error('Error revoking session by ID:', error);
-      throw new Error('SESSION_REVOCATION_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_REVOKE_FAILED);
     }
   }
 
@@ -401,7 +491,7 @@ export class SessionService {
       }));
     } catch (error: any) {
       logger.error('Error getting active sessions:', error);
-      throw new Error('SESSION_INFO_FETCH_FAILED');
+      throw new Error(AUTH_ERROR_CODES.SESSION_INFO_FETCH_FAILED);
     }
   }
 

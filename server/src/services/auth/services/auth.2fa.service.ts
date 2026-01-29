@@ -5,44 +5,18 @@ import { PasswordService } from './auth.password.service';
 import { AuditService } from './auth.audit.service';
 import { CryptoUtils } from '../../../shared/utils/crypto.utils';
 import { emailService } from '../../../shared/utils/email.util';
+import { DeviceContext } from '../../../shared/utils/request.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
+import {
+  TOTPSetupResult,
+  TOTPVerifyResult,
+  BackupCodesResult,
+  TwoFactorStatus
+} from '../../../shared/types/auth.types';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
 const logger = createLogger('auth-2fa-service');
-
-export interface TOTPSetupResult {
-  secret: string;
-  qr_code_url: string;
-  qr_code_data_url: string;
-  manual_entry_key: string;
-  issuer: string;
-  account_name: string;
-}
-
-export interface TOTPVerifyResult {
-  valid: boolean;
-  error?: string;
-}
-
-export interface BackupCodesResult {
-  codes: string[];
-  generated_at: Date;
-}
-
-export interface TwoFactorStatus {
-  is_enabled: boolean;
-  method: 'none' | 'sms' | 'email' | 'authenticator_app';
-  enabled_at?: Date;
-  has_backup_codes: boolean;
-  backup_codes_count: number;
-  recovery_email?: string;
-  recovery_phone?: string;
-}
-
-export interface DeviceContext {
-  ip_address: string;
-  user_agent: string;
-}
 
 /**
  * Two-Factor Authentication Service
@@ -50,11 +24,11 @@ export interface DeviceContext {
  */
 
 export class TwoFactorService {
-  private readonly ISSUER = env.APP_NAME || 'ApexArenas';
-  private readonly BACKUP_CODES_COUNT = 10;
-  private readonly BACKUP_CODE_LENGTH = 8;
-  private readonly TOTP_DIGITS = 6;
-  private readonly TOTP_PERIOD = 30; // seconds
+  private readonly ISSUER = env.APP_NAME;
+  private readonly BACKUP_CODES_COUNT = env.BACKUP_CODES_COUNT;
+  private readonly BACKUP_CODE_LENGTH = env.BACKUP_CODE_LENGTH;
+  private readonly TOTP_DIGITS = env.TOTP_DIGITS;
+  private readonly TOTP_PERIOD = env.TOTP_PERIOD_SECONDS;
 
   // ============================================
   // TOTP SETUP
@@ -71,7 +45,7 @@ export class TwoFactorService {
       // Get user for account name
       const user = await User.findById(user_id).select('email username');
       if (!user) {
-        throw new Error('USER_NOT_FOUND');
+        throw new Error(AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
       // Generate new secret
@@ -126,7 +100,7 @@ export class TwoFactorService {
       };
     } catch (error: any) {
       logger.error('Error setting up 2FA:', error);
-      throw new Error('2FA_SETUP_FAILED');
+      throw new Error(AUTH_ERROR_CODES.TWO_FA_SETUP_FAILED);
     }
   }
 
@@ -144,7 +118,7 @@ export class TwoFactorService {
 
       const security = await UserSecurity.findOne({ user_id });
       if (!security || !security.two_factor.totp_secret) {
-        return { success: false, error: '2FA_NOT_INITIATED' };
+        return { success: false, error: AUTH_ERROR_CODES.TWO_FA_NOT_INITIATED };
       }
 
       // Decrypt secret
@@ -164,7 +138,7 @@ export class TwoFactorService {
             failure_reason: 'Invalid verification code during setup'
           }
         });
-        return { success: false, error: 'INVALID_CODE' };
+        return { success: false, error: AUTH_ERROR_CODES.TWO_FA_INVALID_CODE };
       }
 
       // Generate backup codes
@@ -206,7 +180,7 @@ export class TwoFactorService {
       return { success: true, backup_codes };
     } catch (error: any) {
       logger.error('Error verifying 2FA setup:', error);
-      return { success: false, error: '2FA_VERIFICATION_FAILED' };
+      return { success: false, error: AUTH_ERROR_CODES.TWO_FA_VERIFICATION_FAILED };
     }
   }
 
@@ -227,11 +201,11 @@ export class TwoFactorService {
 
       const security = await UserSecurity.findOne({ user_id });
       if (!security || !security.two_factor.is_enabled) {
-        return { valid: false, error: '2FA_NOT_ENABLED' };
+        return { valid: false, error: AUTH_ERROR_CODES.TWO_FA_NOT_ENABLED };
       }
 
       if (!security.two_factor.totp_secret || !security.two_factor.totp_verified) {
-        return { valid: false, error: '2FA_NOT_SETUP' };
+        return { valid: false, error: AUTH_ERROR_CODES.TWO_FA_NOT_SETUP };
       }
 
       // Decrypt secret
@@ -251,7 +225,7 @@ export class TwoFactorService {
             failure_reason: 'Invalid 2FA code'
           }
         });
-        return { valid: false, error: 'INVALID_CODE' };
+        return { valid: false, error: AUTH_ERROR_CODES.TWO_FA_INVALID_CODE };
       }
 
       await AuditService.logAuthEvent({
@@ -268,7 +242,7 @@ export class TwoFactorService {
       return { valid: true };
     } catch (error: any) {
       logger.error('Error verifying 2FA code:', error);
-      return { valid: false, error: '2FA_VERIFICATION_FAILED' };
+      return { valid: false, error: AUTH_ERROR_CODES.TWO_FA_VERIFICATION_FAILED };
     }
   }
 
@@ -289,7 +263,7 @@ export class TwoFactorService {
 
       const security = await UserSecurity.findOne({ user_id });
       if (!security || !security.two_factor.backup_codes) {
-        return { valid: false, error: 'NO_BACKUP_CODES' };
+        return { valid: false, error: AUTH_ERROR_CODES.NO_BACKUP_CODES };
       }
 
       // Normalize code (remove spaces/dashes)
@@ -322,7 +296,7 @@ export class TwoFactorService {
             failure_reason: 'Invalid or used backup code'
           }
         });
-        return { valid: false, error: 'INVALID_BACKUP_CODE' };
+        return { valid: false, error: AUTH_ERROR_CODES.INVALID_BACKUP_CODE };
       }
 
       // Mark code as used
@@ -354,7 +328,7 @@ export class TwoFactorService {
       return { valid: true };
     } catch (error: any) {
       logger.error('Error verifying backup code:', error);
-      return { valid: false, error: 'BACKUP_CODE_VERIFICATION_FAILED' };
+      return { valid: false, error: AUTH_ERROR_CODES.BACKUP_CODE_VERIFICATION_FAILED };
     }
   }
 
@@ -372,7 +346,7 @@ export class TwoFactorService {
       // Verify password first
       const user = await User.findById(user_id);
       if (!user) {
-        return { error: 'USER_NOT_FOUND' };
+        return { error: AUTH_ERROR_CODES.USER_NOT_FOUND };
       }
 
       const is_password_valid = await PasswordService.comparePassword(password, user.password_hash);
@@ -387,12 +361,12 @@ export class TwoFactorService {
             failure_reason: 'Invalid password for backup code regeneration'
           }
         });
-        return { error: 'INVALID_PASSWORD' };
+        return { error: AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD };
       }
 
       const security = await UserSecurity.findOne({ user_id });
       if (!security || !security.two_factor.is_enabled) {
-        return { error: '2FA_NOT_ENABLED' };
+        return { error: AUTH_ERROR_CODES.TWO_FA_NOT_ENABLED };
       }
 
       // Generate new backup codes
@@ -428,7 +402,7 @@ export class TwoFactorService {
       };
     } catch (error: any) {
       logger.error('Error regenerating backup codes:', error);
-      return { error: 'BACKUP_CODES_REGENERATION_FAILED' };
+      return { error: AUTH_ERROR_CODES.BACKUP_CODES_REGENERATION_FAILED };
     }
   }
 
@@ -450,7 +424,7 @@ export class TwoFactorService {
       // Verify password first
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND };
       }
 
       const is_password_valid = await PasswordService.comparePassword(password, user.password_hash);
@@ -465,7 +439,7 @@ export class TwoFactorService {
             failure_reason: 'Invalid password for 2FA disable'
           }
         });
-        return { success: false, error: 'INVALID_PASSWORD' };
+        return { success: false, error: AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD };
       }
 
       // Disable 2FA
@@ -496,7 +470,7 @@ export class TwoFactorService {
       await emailService.send2FADisabledEmail(user.email, {
         user_name: user.profile?.first_name || 'User',
         disabled_at: new Date(),
-        ip_address: device_context.ip_address
+        ip_address:   device_context.ip_address
       });
 
       logger.info('2FA disabled successfully', { user_id });
@@ -504,7 +478,7 @@ export class TwoFactorService {
       return { success: true };
     } catch (error: any) {
       logger.error('Error disabling 2FA:', error);
-      return { success: false, error: '2FA_DISABLE_FAILED' };
+      return { success: false, error: AUTH_ERROR_CODES.TWO_FA_DISABLE_FAILED };
     }
   }
 
@@ -541,7 +515,7 @@ export class TwoFactorService {
       };
     } catch (error: any) {
       logger.error('Error getting 2FA status:', error);
-      throw new Error('2FA_STATUS_FETCH_FAILED');
+      throw new Error(AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
@@ -590,7 +564,7 @@ export class TwoFactorService {
       return { success: true };
     } catch (error: any) {
       logger.error('Error setting recovery email:', error);
-      return { success: false, error: 'RECOVERY_EMAIL_SET_FAILED' };
+      return { success: false, error: AUTH_ERROR_CODES.INTERNAL_ERROR };
     }
   }
 
@@ -622,7 +596,7 @@ export class TwoFactorService {
       return { success: true };
     } catch (error: any) {
       logger.error('Error setting recovery phone:', error);
-      return { success: false, error: 'RECOVERY_PHONE_SET_FAILED' };
+      return { success: false, error: AUTH_ERROR_CODES.INTERNAL_ERROR };
     }
   }
 
@@ -697,3 +671,6 @@ export class TwoFactorService {
 }
 
 export const twoFactorService = new TwoFactorService();
+
+// Re-export types for backward compatibility
+export type { TOTPSetupResult, TOTPVerifyResult, BackupCodesResult, TwoFactorStatus, DeviceContext };

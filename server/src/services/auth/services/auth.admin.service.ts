@@ -7,6 +7,7 @@ import { PasswordService } from './auth.password.service';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { emailService } from '../../../shared/utils/email.util';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes'; // <-- Add this import
 
 const logger = createLogger('auth-admin-service');
 
@@ -218,12 +219,12 @@ export class AdminService {
 
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       // Prevent banning admins (unless super admin - future feature)
       if (user.role === 'admin') {
-        return { success: false, error: 'CANNOT_BAN_ADMIN' };
+        return { success: false, error: AUTH_ERROR_CODES.CANNOT_BAN_ADMIN }; // changed
       }
 
       // Update user
@@ -269,11 +270,11 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       if (!user.is_banned) {
-        return { success: false, error: 'USER_NOT_BANNED' };
+        return { success: false, error: 'USER_NOT_BANNED' }; // could add to error-codes if desired
       }
 
       user.is_banned = false;
@@ -319,11 +320,11 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       if (user.role === 'admin') {
-        return { success: false, error: 'CANNOT_DEACTIVATE_ADMIN' };
+        return { success: false, error: 'CANNOT_DEACTIVATE_ADMIN' }; // could add to error-codes if desired
       }
 
       user.is_active = false;
@@ -363,11 +364,11 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       if (user.is_active) {
-        return { success: false, error: 'USER_ALREADY_ACTIVE' };
+        return { success: false, error: 'USER_ALREADY_ACTIVE' }; // could add to error-codes if desired
       }
 
       user.is_active = true;
@@ -410,12 +411,12 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       // Cannot change admin role through this method
       if (user.role === 'admin') {
-        return { success: false, error: 'CANNOT_CHANGE_ADMIN_ROLE' };
+        return { success: false, error: 'CANNOT_CHANGE_ADMIN_ROLE' }; // could add to error-codes if desired
       }
 
       const old_role = user.role;
@@ -460,11 +461,11 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       if (user.role !== 'organizer') {
-        return { success: false, error: 'USER_NOT_ORGANIZER' };
+        return { success: false, error: 'USER_NOT_ORGANIZER' }; // could add to error-codes if desired
       }
 
       user.verification_status.organizer_verified = true;
@@ -503,7 +504,7 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       user.verification_status.email_verified = true;
@@ -547,7 +548,7 @@ export class AdminService {
     try {
       const user = await User.findById(user_id);
       if (!user) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       await tokenService.revokeAllUserTokens(user_id, 'admin_action');
@@ -598,7 +599,7 @@ export class AdminService {
       const revoked = await tokenService.revokeSession(user_id, session_id);
 
       if (!revoked) {
-        return { success: false, error: 'SESSION_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.SESSION_NOT_FOUND }; // changed
       }
 
       await AuditService.logAuthEvent({
@@ -634,11 +635,11 @@ export class AdminService {
     try {
       const security = await UserSecurity.findOne({ user_id });
       if (!security) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       if (!security.lockout.is_locked) {
-        return { success: false, error: 'ACCOUNT_NOT_LOCKED' };
+        return { success: false, error: 'ACCOUNT_NOT_LOCKED' }; // could add to error-codes if desired
       }
 
       security.lockout.is_locked = false;
@@ -692,7 +693,7 @@ export class AdminService {
     try {
       const security = await UserSecurity.findOne({ user_id });
       if (!security) {
-        return { success: false, error: 'USER_NOT_FOUND' };
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND }; // changed
       }
 
       security.password.change_required = true;

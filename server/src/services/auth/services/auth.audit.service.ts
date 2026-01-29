@@ -1,4 +1,5 @@
 import { AuthLog, IApexAuthLog } from '../../../models/user.model';
+import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
 const logger = createLogger('auth-audit-service');
@@ -165,7 +166,7 @@ export class AuditService {
    */
   static async getFailedLoginAttempts(
     identifier: string,
-    window_minutes: number = 15
+    window_minutes: number = env.FAILED_LOGIN_WINDOW_MINUTES
   ): Promise<number> {
     try {
       const window_start = new Date();
@@ -190,7 +191,10 @@ export class AuditService {
   /**
    * Check if IP address has suspicious activity
    */
-  static async isIPSuspicious(ip_address: string, window_hours: number = 24): Promise<boolean> {
+  static async isIPSuspicious(
+    ip_address: string, 
+    window_hours: number = env.SUSPICIOUS_ACTIVITY_WINDOW_HOURS
+  ): Promise<boolean> {
     try {
       const window_start = new Date();
       window_start.setHours(window_start.getHours() - window_hours);
@@ -207,8 +211,9 @@ export class AuditService {
         created_at: { $gte: window_start }
       });
 
-      // IP is suspicious if it has multiple suspicious events or many failed logins
-      return suspicious_count >= 3 || failed_count >= 10;
+      // Use config thresholds
+      return suspicious_count >= env.IP_SUSPICIOUS_THRESHOLD || 
+             failed_count >= env.IP_FAILED_ATTEMPTS_THRESHOLD;
     } catch (error: any) {
       logger.error('Error checking IP suspicion:', error);
       return false;
@@ -323,7 +328,7 @@ export class AuditService {
   }
 
   /**
-   * Get login statistics for a user
+   * Get user login statistics
    */
   static async getUserLoginStats(user_id: string): Promise<{
     total_logins: number;
@@ -333,19 +338,19 @@ export class AuditService {
     unique_ips: number;
   }> {
     try {
-      const thirty_days_ago = new Date();
-      thirty_days_ago.setDate(thirty_days_ago.getDate() - 30);
+      const days_ago = new Date();
+      days_ago.setDate(days_ago.getDate() - env.ACTIVITY_WINDOW_DAYS);
 
       const [total_logins, failed_logins, last_login, unique_ips_result] = await Promise.all([
         AuthLog.countDocuments({
           user_id,
           event_type: 'login_success',
-          created_at: { $gte: thirty_days_ago }
+          created_at: { $gte: days_ago }
         }),
         AuthLog.countDocuments({
           user_id,
           event_type: 'login_failed',
-          created_at: { $gte: thirty_days_ago }
+          created_at: { $gte: days_ago }
         }),
         AuthLog.findOne({
           user_id,
@@ -353,7 +358,7 @@ export class AuditService {
         }).sort({ created_at: -1 }).select('created_at metadata.ip_address').lean(),
         AuthLog.distinct('metadata.ip_address', {
           user_id,
-          created_at: { $gte: thirty_days_ago }
+          created_at: { $gte: days_ago }
         })
       ]);
 
@@ -443,7 +448,9 @@ export class AuditService {
   /**
    * Clean up old audit logs (for scheduled job)
    */
-  static async cleanupOldLogs(retention_days: number = 90): Promise<number> {
+  static async cleanupOldLogs(
+    retention_days: number = env.AUDIT_LOG_RETENTION_DAYS
+  ): Promise<number> {
     try {
       const cutoff_date = new Date();
       cutoff_date.setDate(cutoff_date.getDate() - retention_days);

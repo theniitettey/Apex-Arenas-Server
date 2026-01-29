@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { tokenService } from '../services/auth.token.service';
 import { redisManager } from '../../../configs/redis.config';
+import { AuditService } from '../services/auth.audit.service';
 import { User, UserSecurity } from '../../../models/user.model';
 import { AuthError } from './auth.error.middleware';
 import { createLogger } from '../../../shared/utils/logger.utils';
@@ -30,6 +32,53 @@ const extractBearerToken = (req: Request): string | null => {
 };
 
 /**
+ * Check and block suspicious IPs
+ * Returns true if IP should be blocked
+ */
+const checkAndBlockSuspiciousIP = async (
+  ip_address: string,
+  user_agent: string
+): Promise<{ blocked: boolean; reason?: string }> => {
+  try {
+    // Check if IP is already blocked in Redis
+    const is_blocked = await redisManager.isIPBlocked(ip_address);
+    if (is_blocked) {
+      logger.warn('Blocked IP attempted access', { ip_address });
+      return { blocked: true, reason: 'IP is temporarily blocked due to suspicious activity' };
+    }
+
+    // Check if IP has suspicious activity in audit logs
+    const is_suspicious = await AuditService.isIPSuspicious(ip_address, 24);
+    if (is_suspicious) {
+      // Block the IP for 1 hour
+      await redisManager.blockIP(ip_address, 3600);
+      
+      logger.warn('Blocking suspicious IP', { ip_address });
+      
+      await AuditService.logAuthEvent({
+        event_type: 'suspicious_activity',
+        success: false,
+        metadata: {
+          ip_address,
+          user_agent,
+          failure_reason: 'IP blocked due to suspicious activity',
+          is_suspicious: true,
+          risk_factors: ['suspicious_ip_blocked']
+        }
+      });
+
+      return { blocked: true, reason: 'IP is temporarily blocked due to suspicious activity' };
+    }
+
+    return { blocked: false };
+  } catch (error:any) {
+    logger.error('Error checking suspicious IP:', error);
+    // Fail open - don't block on error
+    return { blocked: false };
+  }
+};
+
+/**
  * User JWT middleware - for players and organizers
  * Verifies access token signed with user secret
  */
@@ -39,6 +88,15 @@ export const userAuthMiddleware = async (
   next: NextFunction
 ) => {
   try {
+    const ip_address = req.ip || 'unknown';
+    const user_agent = req.get('user-agent') || 'unknown';
+
+    // CHECK FOR SUSPICIOUS IP AND BLOCK
+    const ip_check = await checkAndBlockSuspiciousIP(ip_address, user_agent);
+    if (ip_check.blocked) {
+      throw new AuthError(ip_check.reason || 'Access denied', 403, 'IP_BLOCKED');
+    }
+
     const token = extractBearerToken(req);
 
     if (!token) {
@@ -50,7 +108,7 @@ export const userAuthMiddleware = async (
     }
 
     // Check if token is blacklisted
-    const token_hash = require('crypto').createHash('sha256').update(token).digest('hex');
+    const token_hash = crypto.createHash('sha256').update(token).digest('hex');
     const is_blacklisted = await redisManager.isTokenBlacklisted(token_hash);
     if (is_blacklisted) {
       logger.warn('Blacklisted token used', { path: req.path, ip: req.ip });
@@ -121,6 +179,15 @@ export const adminAuthMiddleware = async (
   next: NextFunction
 ) => {
   try {
+    const ip_address = req.ip || 'unknown';
+    const user_agent = req.get('user-agent') || 'unknown';
+
+    // CHECK FOR SUSPICIOUS IP AND BLOCK (stricter for admin)
+    const ip_check = await checkAndBlockSuspiciousIP(ip_address, user_agent);
+    if (ip_check.blocked) {
+      throw new AuthError(ip_check.reason || 'Access denied', 403, 'IP_BLOCKED');
+    }
+
     const token = extractBearerToken(req);
 
     if (!token) {
@@ -132,7 +199,7 @@ export const adminAuthMiddleware = async (
     }
 
     // Check if token is blacklisted
-    const token_hash = require('crypto').createHash('sha256').update(token).digest('hex');
+    const token_hash = crypto.createHash('sha256').update(token).digest('hex');
     const is_blacklisted = await redisManager.isTokenBlacklisted(token_hash);
     if (is_blacklisted) {
       logger.warn('Blacklisted admin token used', { path: req.path, ip: req.ip });

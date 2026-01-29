@@ -4,6 +4,7 @@ import loginRoutes from './auth.login.route';
 import tokenRoutes from './auth.token.route';
 import passwordRoutes from './auth.password.route';
 import adminRoutes from './auth.admin.route';
+import otpRoutes from './auth.otp.routes';
 
 const router: Router = Router();
 
@@ -21,5 +22,8 @@ router.use('/', passwordRoutes);
 
 // Admin routes (user management, security, stats) - mounted at /admin
 router.use('/admin', adminRoutes);
+
+// Mount OTP routes
+router.use('/otp', otpRoutes);
 
 export default router;

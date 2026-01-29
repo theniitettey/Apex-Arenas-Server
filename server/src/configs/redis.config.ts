@@ -207,27 +207,7 @@ class RedisManager {
   // FAILED LOGIN ATTEMPTS
   // ============================================
 
-  /**
-   * Track failed login attempts
-   */
-  async trackFailedAttempt(identifier: string): Promise<number> {
-    const key = `${this.KEY_PREFIXES.FAILED_ATTEMPTS}${identifier}`;
-    const lockout_window = env.LOCKOUT_WINDOW_MINUTES;
-
-    try {
-      const count = await this.client.incr(key);
-
-      if (count === 1) {
-        await this.client.expire(key, lockout_window * 60);
-      }
-
-      return count;
-    } catch (error: any) {
-      logger.error('Failed to track login attempt:', error);
-      return 0;
-    }
-  }
-
+  
   /**
    * Get failed attempt count
    */
@@ -252,48 +232,108 @@ class RedisManager {
     logger.debug('Failed attempts reset', { identifier });
   }
 
-  // ============================================
-  // TOKEN BLACKLIST (for logout before expiry)
-  // ============================================
-
+  
   /**
-   * Blacklist a token (for immediate logout)
+   * Blacklist an access token (for logout)
    */
   async blacklistToken(
-    token_hash: string,
-    reason: string,
-    ttl_seconds: number
+    tokenHash: string, 
+    ttlSeconds: number = env.TOKEN_BLACKLIST_TTL_SECONDS
   ): Promise<void> {
-    const key = `${this.KEY_PREFIXES.TOKEN_BLACKLIST}${token_hash}`;
-    const data: BlacklistedToken = {
-      token_hash,
-      reason,
-      blacklisted_at: Date.now(),
-      expires_at: Date.now() + (ttl_seconds * 1000)
-    };
-
     try {
-      await this.client.setex(key, ttl_seconds, JSON.stringify(data));
-      logger.debug('Token blacklisted', { reason });
-    } catch (error: any) {
-      logger.error('Failed to blacklist token:', error);
+      const key = `blacklist:token:${tokenHash}`;
+      await this.client.setex(key, ttlSeconds, '1');
+    } catch (error:any) {
+      logger.error('Error blacklisting token:', error);
       throw error;
     }
   }
 
   /**
-   * Check if token is blacklisted
+   * Check if a token is blacklisted
    */
-  async isTokenBlacklisted(token_hash: string): Promise<boolean> {
-    const key = `${this.KEY_PREFIXES.TOKEN_BLACKLIST}${token_hash}`;
-
+  async isTokenBlacklisted(tokenHash: string): Promise<boolean> {
     try {
-      const exists = await this.client.exists(key);
-      return exists === 1;
-    } catch (error: any) {
-      logger.error('Failed to check token blacklist:', error);
-      // Fail closed - treat as blacklisted if Redis is down for security
+      const key = `blacklist:token:${tokenHash}`;
+      const result = await this.client.get(key);
+      return result !== null;
+    } catch (error:any) {
+      logger.error('Error checking token blacklist:', error);
       return false;
+    }
+  }
+
+  /**
+   * Block an IP address for suspicious activity
+   */
+  async blockIP(
+    ip_address: string, 
+    ttlSeconds: number = env.IP_BLOCK_DURATION_SECONDS
+  ): Promise<void> {
+    try {
+      const key = `blocked:ip:${ip_address}`;
+      await this.client.setex(key, ttlSeconds, '1');
+      logger.info('IP blocked', { ip_address, ttl: ttlSeconds });
+    } catch (error:any) {
+      logger.error('Error blocking IP:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if an IP is blocked
+   */
+  async isIPBlocked(ip_address: string): Promise<boolean> {
+    try {
+      const key = `blocked:ip:${ip_address}`;
+      const result = await this.client.get(key);
+      return result !== null;
+    } catch (error:any) {
+      logger.error('Error checking IP block:', error);
+      // Fail open - don't block on error
+      return false;
+    }
+  }
+
+  /**
+   * Unblock an IP address
+   */
+  async unblockIP(ip_address: string): Promise<void> {
+    try {
+      const key = `blocked:ip:${ip_address}`;
+      await this.client.del(key);
+      logger.info('IP unblocked', { ip_address });
+    } catch (error:any) {
+      logger.error('Error unblocking IP:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Track failed attempts for an IP (for auto-blocking)
+   */
+  async trackFailedAttempt(
+    ip_address: string, 
+    action: string
+  ): Promise<{ count: number; shouldBlock: boolean }> {
+    try {
+      const key = `failed:${action}:${ip_address}`;
+      const count = await this.client.incr(key);
+      
+      if (count === 1) {
+        await this.client.expire(key, env.LOCKOUT_WINDOW_MINUTES * 60);
+      }
+
+      // Use config threshold
+      const shouldBlock = count >= env.IP_AUTO_BLOCK_FAILED_THRESHOLD;
+      if (shouldBlock) {
+        await this.blockIP(ip_address, env.IP_BLOCK_DURATION_SECONDS);
+      }
+
+      return { count, shouldBlock };
+    } catch (error:any) {
+      logger.error('Error tracking failed attempt:', error);
+      return { count: 0, shouldBlock: false };
     }
   }
 
