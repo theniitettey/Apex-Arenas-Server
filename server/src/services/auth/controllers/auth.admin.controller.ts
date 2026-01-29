@@ -2,24 +2,13 @@ import { Request, Response } from 'express';
 import { adminService } from '../services/auth.admin.service';
 import { userService } from '../services/auth.user.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { sendSuccess, sendError, sendCreated, sendNotFound } from '../../../shared/utils/response.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-admin-controller');
 
-/**
- * Admin Controller for Auth Service
- * Handles user management, security operations, and system statistics
- */
-
 export class AdminController {
 
-  // ============================================
-  // USER LISTING & SEARCH
-  // ============================================
-
-  /**
-   * GET /admin/users
-   * List users with filters and pagination
-   */
   async listUsers(req: Request, res: Response) {
     try {
       const {
@@ -46,61 +35,29 @@ export class AdminController {
         sort_order: sort_order as 'asc' | 'desc'
       });
 
-      res.json({
-        success: true,
-        data: result
-      });
+      return sendSuccess(res, result);
     } catch (error: any) {
       logger.error('List users error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to list users',
-        error_code: error.message
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  /**
-   * GET /admin/users/:userId
-   * Get detailed user information
-   */
   async getUserDetails(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
-
       const result = await adminService.getUserDetails(userId);
-
-      res.json({
-        success: true,
-        data: result
-      });
+      return sendSuccess(res, result);
     } catch (error: any) {
       logger.error('Get user details error:', error);
 
       if (error.message === 'USER_NOT_FOUND') {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found',
-          error_code: 'USER_NOT_FOUND'
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get user details',
-        error_code: error.message
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  // ============================================
-  // USER BAN/UNBAN
-  // ============================================
-
-  /**
-   * POST /admin/users/:userId/ban
-   * Ban a user account
-   */
   async banUser(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -108,11 +65,7 @@ export class AdminController {
       const admin_id = (req as any).user?.user_id;
 
       if (!reason) {
-        return res.status(400).json({
-          success: false,
-          error: 'Ban reason is required',
-          error_code: 'REASON_REQUIRED'
-        });
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Ban reason is required');
       }
 
       const result = await adminService.banUser({
@@ -127,32 +80,19 @@ export class AdminController {
       });
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Ban user error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to ban user',
-        error_code: 'BAN_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/unban
-   * Unban a user account
-   */
   async unbanUser(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -168,36 +108,22 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === 'USER_NOT_BANNED') {
+          return sendError(res, AUTH_ERROR_CODES.USER_NOT_BANNED);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Unban user error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to unban user',
-        error_code: 'UNBAN_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  // ============================================
-  // ACCOUNT ACTIVATION
-  // ============================================
-
-  /**
-   * POST /admin/users/:userId/deactivate
-   * Deactivate user account
-   */
   async deactivateUser(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -215,32 +141,19 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Deactivate user error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to deactivate user',
-        error_code: 'DEACTIVATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/reactivate
-   * Reactivate user account
-   */
   async reactivateUser(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -256,36 +169,22 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === 'USER_ALREADY_ACTIVE') {
+          return sendError(res, AUTH_ERROR_CODES.USER_ALREADY_ACTIVE);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Reactivate user error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to reactivate user',
-        error_code: 'REACTIVATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  // ============================================
-  // ROLE MANAGEMENT
-  // ============================================
-
-  /**
-   * PUT /admin/users/:userId/role
-   * Change user role
-   */
   async changeUserRole(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -293,11 +192,7 @@ export class AdminController {
       const admin_id = (req as any).user?.user_id;
 
       if (!role || !['player', 'organizer'].includes(role)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Valid role (player or organizer) is required',
-          error_code: 'INVALID_ROLE'
-        });
+        return sendError(res, AUTH_ERROR_CODES.INVALID_ROLE);
       }
 
       const result = await adminService.changeUserRole(
@@ -311,32 +206,19 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Change user role error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to change user role',
-        error_code: 'ROLE_CHANGE_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/verify-organizer
-   * Verify organizer status
-   */
   async verifyOrganizer(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -352,32 +234,22 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === 'USER_NOT_ORGANIZER') {
+          return sendError(res, AUTH_ERROR_CODES.USER_NOT_ORGANIZER);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Verify organizer error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to verify organizer',
-        error_code: 'VERIFICATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.VERIFICATION_FAILED);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/verify-email
-   * Force verify user email
-   */
   async forceVerifyEmail(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -393,36 +265,19 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Force verify email error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to verify email',
-        error_code: 'VERIFICATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.VERIFICATION_FAILED);
     }
   }
 
-  // ============================================
-  // SECURITY OPERATIONS
-  // ============================================
-
-  /**
-   * POST /admin/users/:userId/force-logout
-   * Force logout user from all devices
-   */
   async forceLogoutUser(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -440,58 +295,31 @@ export class AdminController {
       );
 
       if (!result.success) {
-        return res.status(404).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Force logout error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to logout user',
-        error_code: 'FORCE_LOGOUT_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.LOGOUT_FAILED);
     }
   }
 
-  /**
-   * GET /admin/users/:userId/sessions
-   * Get user's active sessions
-   */
   async getUserSessions(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
-
       const sessions = await adminService.getUserSessions(userId);
 
-      res.json({
-        success: true,
-        data: {
-          sessions,
-          count: sessions.length
-        }
+      return sendSuccess(res, {
+        sessions,
+        count: sessions.length
       });
     } catch (error: any) {
       logger.error('Get user sessions error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get sessions',
-        error_code: 'SESSIONS_FETCH_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.SESSION_INFO_FETCH_FAILED);
     }
   }
 
-  /**
-   * DELETE /admin/users/:userId/sessions/:sessionId
-   * Revoke specific session
-   */
   async revokeUserSession(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -509,31 +337,16 @@ export class AdminController {
       );
 
       if (!result.success) {
-        return res.status(404).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.SESSION_NOT_FOUND);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Revoke session error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to revoke session',
-        error_code: 'SESSION_REVOKE_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.SESSION_REVOKE_FAILED);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/unlock
-   * Unlock locked account
-   */
   async unlockAccount(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -549,32 +362,22 @@ export class AdminController {
       );
 
       if (!result.success) {
-        const status = result.error === 'USER_NOT_FOUND' ? 404 : 400;
-        return res.status(status).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        if (result.error === 'USER_NOT_FOUND') {
+          return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === 'ACCOUNT_NOT_LOCKED') {
+          return sendError(res, AUTH_ERROR_CODES.ACCOUNT_NOT_LOCKED);
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Unlock account error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to unlock account',
-        error_code: 'UNLOCK_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  /**
-   * POST /admin/users/:userId/force-password-reset
-   * Force password reset on next login
-   */
   async forcePasswordReset(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -592,35 +395,16 @@ export class AdminController {
       );
 
       if (!result.success) {
-        return res.status(404).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Force password reset error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to force password reset',
-        error_code: 'FORCE_RESET_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.PASSWORD_RESET_FAILED);
     }
   }
 
-  // ============================================
-  // AUDIT & REPORTING
-  // ============================================
-
-  /**
-   * GET /admin/users/:userId/audit
-   * Get user's audit trail
-   */
   async getUserAuditTrail(req: Request, res: Response) {
     try {
       const userId = req.params.userId as string;
@@ -631,27 +415,16 @@ export class AdminController {
         limit ? parseInt(limit as string) : 100
       );
 
-      res.json({
-        success: true,
-        data: {
-          logs,
-          count: logs.length
-        }
+      return sendSuccess(res, {
+        logs,
+        count: logs.length
       });
     } catch (error: any) {
       logger.error('Get user audit trail error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get audit trail',
-        error_code: 'AUDIT_FETCH_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.AUDIT_TRAIL_FETCH_FAILED);
     }
   }
 
-  /**
-   * GET /admin/audit
-   * Search audit logs
-   */
   async searchAuditLogs(req: Request, res: Response) {
     try {
       const {
@@ -676,27 +449,16 @@ export class AdminController {
         limit: limit ? parseInt(limit as string) : undefined
       });
 
-      res.json({
-        success: true,
-        data: {
-          logs,
-          count: logs.length
-        }
+      return sendSuccess(res, {
+        logs,
+        count: logs.length
       });
     } catch (error: any) {
       logger.error('Search audit logs error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to search audit logs',
-        error_code: 'AUDIT_SEARCH_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.AUDIT_SEARCH_FAILED);
     }
   }
 
-  /**
-   * GET /admin/stats
-   * Get system statistics
-   */
   async getSystemStats(req: Request, res: Response) {
     try {
       const { timeframe } = req.query;
@@ -705,24 +467,13 @@ export class AdminController {
         (timeframe as '24h' | '7d' | '30d') || '24h'
       );
 
-      res.json({
-        success: true,
-        data: stats
-      });
+      return sendSuccess(res, stats);
     } catch (error: any) {
       logger.error('Get system stats error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get system statistics',
-        error_code: 'STATS_FETCH_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  /**
-   * GET /admin/security/suspicious
-   * Get suspicious activity summary
-   */
   async getSuspiciousActivity(req: Request, res: Response) {
     try {
       const { hours } = req.query;
@@ -731,72 +482,37 @@ export class AdminController {
         hours ? parseInt(hours as string) : 24
       );
 
-      res.json({
-        success: true,
-        data: summary
-      });
+      return sendSuccess(res, summary);
     } catch (error: any) {
       logger.error('Get suspicious activity error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get suspicious activity',
-        error_code: 'SUSPICIOUS_FETCH_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  // ============================================
-  // ADMIN MANAGEMENT
-  // ============================================
-
-  /**
-   * GET /admin/admins
-   * List all admin accounts
-   */
   async listAdmins(req: Request, res: Response) {
     try {
       const admins = await adminService.listAdmins();
 
-      res.json({
-        success: true,
-        data: {
-          admins,
-          count: admins.length
-        }
+      return sendSuccess(res, {
+        admins,
+        count: admins.length
       });
     } catch (error: any) {
       logger.error('List admins error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to list admins',
-        error_code: 'ADMIN_LIST_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  /**
-   * POST /admin/admins/setup
-   * Setup new admin account
-   */
   async setupAdmin(req: Request, res: Response) {
     try {
       const { email, password, first_name, last_name, username } = req.body;
 
       if (!email || !password || !first_name || !last_name || !username) {
-        return res.status(400).json({
-          success: false,
-          error: 'All fields are required',
-          error_code: 'MISSING_FIELDS'
-        });
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS);
       }
 
-      // Check if email is in whitelist
       if (!adminService.isAdminEmail(email)) {
-        return res.status(403).json({
-          success: false,
-          error: 'Email not authorized for admin access',
-          error_code: 'UNAUTHORIZED_EMAIL'
-        });
+        return sendError(res, AUTH_ERROR_CODES.ADMIN_NOT_WHITELISTED);
       }
 
       const admin = await userService.setupAdminAccount(
@@ -809,46 +525,26 @@ export class AdminController {
         }
       );
 
-      res.status(201).json({
-        success: true,
-        message: 'Admin account created successfully',
-        data: {
-          user_id: admin._id,
-          email: admin.email,
-          username: admin.username
-        }
-      });
+      return sendCreated(res, {
+        user_id: admin._id,
+        email: admin.email,
+        username: admin.username
+      }, 'Admin account created successfully');
     } catch (error: any) {
       logger.error('Setup admin error:', error);
 
       if (error.message === 'ADMIN_ALREADY_EXISTS') {
-        return res.status(409).json({
-          success: false,
-          error: 'Admin already exists',
-          error_code: 'ADMIN_EXISTS'
-        });
+        return sendError(res, AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS);
       }
 
       if (error.message === 'ADMIN_PASSWORD_TOO_WEAK') {
-        return res.status(400).json({
-          success: false,
-          error: 'Password does not meet admin security requirements',
-          error_code: 'WEAK_PASSWORD'
-        });
+        return sendError(res, AUTH_ERROR_CODES.ADMIN_PASSWORD_TOO_WEAK);
       }
 
-      res.status(500).json({
-        success: false,
-        error: 'Failed to setup admin',
-        error_code: 'SETUP_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 
-  /**
-   * POST /admin/admins/:adminId/force-2fa
-   * Force 2FA setup for admin
-   */
   async forceAdmin2FASetup(req: Request, res: Response) {
     try {
       const adminId = req.params.adminId as string;
@@ -864,24 +560,13 @@ export class AdminController {
       );
 
       if (!result.success) {
-        return res.status(404).json({
-          success: false,
-          error: result.error,
-          error_code: result.error
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.ADMIN_NOT_FOUND);
       }
 
-      res.json({
-        success: true,
-        message: result.message
-      });
+      return sendSuccess(res, undefined, result.message);
     } catch (error: any) {
       logger.error('Force admin 2FA error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to force 2FA setup',
-        error_code: 'FORCE_2FA_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
 }

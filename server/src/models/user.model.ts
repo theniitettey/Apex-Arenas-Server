@@ -167,6 +167,7 @@ export interface IApexAuthLog extends Document {
     | 'registration_failed'
     // Password events
     | 'password_change_success'
+    | 'password_changed'
     | 'password_change_failed'
     | 'password_reset_requested'
     | 'password_reset_completed'

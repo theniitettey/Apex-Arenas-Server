@@ -3,31 +3,19 @@ import { userService } from '../services/auth.user.service';
 import { otpService } from '../services/auth.otp.service';
 import { AuditService } from '../services/auth.audit.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { sendSuccess, sendError, sendCreated, sendNotFound } from '../../../shared/utils/response.utils';
+import { extractDeviceContext } from '../../../shared/utils/request.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-register-controller');
 
-/**
- * Register Controller
- * Handles user registration, email verification, and availability checks
- */
-
 export class RegisterController {
 
-  // ============================================
-  // USER REGISTRATION
-  // ============================================
-
-  /**
-   * POST /auth/register
-   * Register a new user (player or organizer)
-   */
   async register(req: Request, res: Response) {
     try {
       const { email, username, password, first_name, last_name, role } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
-      // Register user via user service
       const user = await userService.registerUser(
         {
           email,
@@ -37,19 +25,15 @@ export class RegisterController {
           last_name,
           role: role || 'player'
         },
-        {
-          ip_address,
-          user_agent
-        }
+        device_context
       );
 
-      // Generate email verification OTP (this now sends the email automatically)
       const { otp_id } = await otpService.generateOTP({
         user_id: user._id.toString(),
         type: 'email_verification',
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'registration'
         }
       });
@@ -60,7 +44,6 @@ export class RegisterController {
         otp_id
       });
 
-      // Return user data (excluding sensitive information)
       const user_data = {
         user_id: user._id,
         email: user.email,
@@ -71,199 +54,113 @@ export class RegisterController {
         created_at: user.created_at
       };
 
-      res.status(201).json({
-        success: true,
-        message: 'Registration successful. Please check your email for verification code.',
-        data: {
-          user: user_data,
-          requires_verification: true
-        }
-      });
+      return sendCreated(res, {
+        user: user_data,
+        requires_verification: true
+      }, 'Registration successful. Please check your email for verification code.');
     } catch (error: any) {
       logger.error('Registration error:', error);
 
-      // SECURITY FIX: Use generic error message for email/username conflicts
-      // to prevent enumeration attacks
       if (error.message === 'EMAIL_ALREADY_EXISTS' || error.message === 'USERNAME_ALREADY_EXISTS') {
-        // Log the specific reason internally for debugging
         logger.warn('Registration conflict', { 
           reason: error.message,
           ip: req.ip 
         });
         
-        // Return generic message to prevent enumeration
-        return res.status(400).json({
-          success: false,
-          error: 'Unable to create account with the provided details. Please try different credentials.',
-          error_code: 'REGISTRATION_FAILED'
-        });
+        return sendError(res, AUTH_ERROR_CODES.REGISTRATION_FAILED, undefined, 'Unable to create account with the provided details. Please try different credentials.');
       }
 
       if (error.message.startsWith('WEAK_PASSWORD')) {
         const errors = error.message.replace('WEAK_PASSWORD:', '').split('|');
-        return res.status(400).json({
-          success: false,
-          error: 'Password does not meet requirements',
-          error_code: 'WEAK_PASSWORD',
-          details: errors
-        });
+        return sendError(res, AUTH_ERROR_CODES.WEAK_PASSWORD, errors);
       }
 
       if (error.message === 'PASSWORD_COMPROMISED') {
-        return res.status(400).json({
-          success: false,
-          error: 'This password has been found in data breaches. Please choose a different one.',
-          error_code: 'PASSWORD_COMPROMISED'
-        });
+        return sendError(res, AUTH_ERROR_CODES.PASSWORD_COMPROMISED);
       }
 
       if (error.message === 'INVALID_ROLE') {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid role specified',
-          error_code: 'INVALID_ROLE'
-        });
+        return sendError(res, AUTH_ERROR_CODES.INVALID_ROLE);
       }
 
-      res.status(500).json({
-        success: false,
-        error: 'Registration failed. Please try again.',
-        error_code: 'REGISTRATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.REGISTRATION_FAILED);
     }
   }
 
-  // ============================================
-  // EMAIL VERIFICATION
-  // ============================================
-
-  /**
-   * POST /auth/verify-email
-   * Verify email with OTP after registration
-   */
   async verifyEmail(req: Request, res: Response) {
     try {
       const { email, otp } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
-      // Find user by email
       const user = await userService.getUserByEmail(email);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found',
-          error_code: 'USER_NOT_FOUND'
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      // Check if already verified
       if (user.verification_status.email_verified) {
-        return res.json({
-          success: true,
-          message: 'Email is already verified',
-          data: {
-            already_verified: true
-          }
-        });
+        return sendSuccess(res, { already_verified: true }, 'Email is already verified');
       }
 
-      // Verify OTP
       const otp_result = await otpService.verifyOTP({
         user_id: user._id.toString(),
         otp,
         type: 'email_verification',
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
       if (!otp_result.valid) {
-        return res.status(400).json({
-          success: false,
-          error: otp_result.error === 'OTP_MAX_ATTEMPTS_EXCEEDED'
-            ? 'Too many failed attempts. Please request a new code.'
-            : 'Invalid or expired verification code',
-          error_code: otp_result.error || 'INVALID_OTP'
-        });
+        const error_code = otp_result.error || AUTH_ERROR_CODES.INVALID_OTP;
+        return sendError(res, error_code);
       }
 
-      // Mark email as verified
       await userService.verifyUserEmail(user._id.toString());
 
-      // Log the verification
       await AuditService.logAuthEvent({
         user_id: user._id.toString(),
         event_type: 'otp_verified',
         success: true,
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
       logger.info('Email verified successfully', { user_id: user._id.toString(), email: user.email });
 
-      res.json({
-        success: true,
-        message: 'Email verified successfully. You can now login.',
-        data: {
-          verified: true
-        }
-      });
+      return sendSuccess(res, { verified: true }, 'Email verified successfully. You can now login.');
     } catch (error: any) {
       logger.error('Email verification error:', error);
-
-      res.status(500).json({
-        success: false,
-        error: 'Email verification failed',
-        error_code: 'VERIFICATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.VERIFICATION_FAILED);
     }
   }
 
-  // ============================================
-  // RESEND VERIFICATION
-  // ============================================
-
-  /**
-   * POST /auth/resend-verification
-   * Resend email verification OTP
-   */
   async resendVerification(req: Request, res: Response) {
     try {
       const { email } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
       const user = await userService.getUserByEmail(email);
 
       if (!user) {
-        logger.warn('Resend verification for non-existent email', { email, ip_address });
-        return res.json({
-          success: true,
-          message: 'If the email exists, a new verification code has been sent'
-        });
+        logger.warn('Resend verification for non-existent email', { email, ip_address: device_context.ip_address });
+        return sendSuccess(res, undefined, 'If the email exists, a new verification code has been sent');
       }
 
       if (user.verification_status.email_verified) {
-        return res.json({
-          success: true,
-          message: 'Email is already verified'
-        });
+        return sendSuccess(res, undefined, 'Email is already verified');
       }
 
-      // Invalidate any existing OTPs
       await otpService.invalidateAllUserOTPs(user._id.toString());
 
-      // Generate new OTP (this now sends the email automatically)
       const { otp_id } = await otpService.generateOTP({
         user_id: user._id.toString(),
         type: 'email_verification',
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'resend_verification'
         }
       });
@@ -273,102 +170,54 @@ export class RegisterController {
         otp_id
       });
 
-      res.json({
-        success: true,
-        message: 'If the email exists, a new verification code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a new verification code has been sent');
     } catch (error: any) {
       logger.error('Resend verification error:', error);
-
-      // Return success to prevent enumeration
-      res.json({
-        success: true,
-        message: 'If the email exists, a new verification code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a new verification code has been sent');
     }
   }
 
-  // ============================================
-  // AVAILABILITY CHECKS
-  // ============================================
-
-  /**
-   * GET /auth/check-email
-   * Check if email is available
-   * SECURITY: Rate limited to prevent enumeration
-   */
   async checkEmailAvailability(req: Request, res: Response) {
     try {
       const { email } = req.query;
 
       if (!email || typeof email !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: 'Email parameter is required',
-          error_code: 'MISSING_EMAIL'
-        });
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Email parameter is required');
       }
 
       const user = await userService.getUserByEmail(email);
 
-      // SECURITY: Add slight delay to prevent timing attacks
       await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 100));
 
-      res.json({
-        success: true,
-        data: {
-          email,
-          available: !user
-        }
+      return sendSuccess(res, {
+        email,
+        available: !user
       });
     } catch (error: any) {
       logger.error('Email availability check error:', error);
-
-      res.status(500).json({
-        success: false,
-        error: 'Failed to check email availability',
-        error_code: 'CHECK_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 
-  /**
-   * GET /auth/check-username
-   * Check if username is available
-   * SECURITY: Rate limited to prevent enumeration
-   */
   async checkUsernameAvailability(req: Request, res: Response) {
     try {
       const { username } = req.query;
 
       if (!username || typeof username !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: 'Username parameter is required',
-          error_code: 'MISSING_USERNAME'
-        });
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Username parameter is required');
       }
 
       const user = await userService.getUserByUsername(username);
 
-      // SECURITY: Add slight delay to prevent timing attacks
       await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 100));
 
-      res.json({
-        success: true,
-        data: {
-          username,
-          available: !user
-        }
+      return sendSuccess(res, {
+        username,
+        available: !user
       });
     } catch (error: any) {
       logger.error('Username availability check error:', error);
-
-      res.status(500).json({
-        success: false,
-        error: 'Failed to check username availability',
-        error_code: 'CHECK_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
 }

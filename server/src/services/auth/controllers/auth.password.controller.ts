@@ -7,214 +7,128 @@ import { AuditService } from '../services/auth.audit.service';
 import { AuthRequest } from '../middlewares/auth.jwt.middleware';
 import { User, UserSecurity } from '../../../models/user.model';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { sendSuccess, sendError, sendUnauthorized, sendNotFound } from '../../../shared/utils/response.utils';
+import { extractDeviceContext } from '../../../shared/utils/request.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-password-controller');
 
-/**
- * Password Controller
- * Handles password change, reset, and validation for users and admins
- */
-
 export class PasswordController {
 
-  // ============================================
-  // PASSWORD CHANGE (Authenticated)
-  // ============================================
-
-  /**
-   * POST /auth/password/change
-   * Change password for authenticated user
-   */
   async changePassword(req: AuthRequest, res: Response) {
     try {
       const user_id = req.user?.user_id;
       const { current_password, new_password } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
       if (!user_id) {
-        return res.status(401).json({
-          success: false,
-          error: 'Authentication required',
-          error_code: 'AUTH_REQUIRED'
-        });
+        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
       }
 
       await userService.changePassword(
         user_id,
         current_password,
         new_password,
-        { ip_address, user_agent }
+        device_context
       );
 
-      res.json({
-        success: true,
-        message: 'Password changed successfully. Please login again with your new password.'
-      });
+      return sendSuccess(res, undefined, 'Password changed successfully. Please login again with your new password.');
     } catch (error: any) {
       logger.error('Password change error:', error);
 
       if (error.message === 'USER_NOT_FOUND') {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found',
-          error_code: 'USER_NOT_FOUND'
-        });
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
       if (error.message === 'INVALID_CURRENT_PASSWORD') {
-        return res.status(400).json({
-          success: false,
-          error: 'Current password is incorrect',
-          error_code: 'INVALID_CURRENT_PASSWORD'
-        });
+        return sendError(res, AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD);
       }
 
       if (error.message.startsWith('WEAK_PASSWORD')) {
         const errors = error.message.replace('WEAK_PASSWORD:', '').split('|');
-        return res.status(400).json({
-          success: false,
-          error: 'Password does not meet requirements',
-          error_code: 'WEAK_PASSWORD',
-          details: errors
-        });
+        return sendError(res, AUTH_ERROR_CODES.WEAK_PASSWORD, errors);
       }
 
       if (error.message === 'PASSWORD_RECENTLY_USED') {
-        return res.status(400).json({
-          success: false,
-          error: 'Cannot reuse a recent password',
-          error_code: 'PASSWORD_RECENTLY_USED'
-        });
+        return sendError(res, AUTH_ERROR_CODES.PASSWORD_RECENTLY_USED);
       }
 
-      res.status(500).json({
-        success: false,
-        error: 'Failed to change password',
-        error_code: 'PASSWORD_CHANGE_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.PASSWORD_CHANGE_FAILED);
     }
   }
 
-  // ============================================
-  // PASSWORD RESET (Forgot Password)
-  // ============================================
-
-  /**
-   * POST /auth/password/reset
-   * Request password reset - sends OTP to email
-   * Always returns success to prevent email enumeration
-   */
   async requestPasswordReset(req: Request, res: Response) {
     try {
       const { email } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
-      // Find user by email
       const user = await userService.getUserByEmail(email);
 
-      // Always return success to prevent email enumeration
       if (!user) {
-        logger.warn('Password reset attempt for non-existent email', { email, ip_address });
-        return res.json({
-          success: true,
-          message: 'If the email exists, a reset code has been sent'
-        });
+        logger.warn('Password reset attempt for non-existent email', { email, ip_address: device_context.ip_address });
+        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
       }
 
-      // Check if user is active
       if (!user.is_active) {
-        logger.warn('Password reset attempt for inactive account', { email, ip_address });
-        return res.json({
-          success: true,
-          message: 'If the email exists, a reset code has been sent'
-        });
+        logger.warn('Password reset attempt for inactive account', { email, ip_address: device_context.ip_address });
+        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
       }
 
-      // Check if account is banned
       if (user.is_banned) {
-        logger.warn('Password reset attempt for banned account', { email, ip_address });
-        return res.json({
-          success: true,
-          message: 'If the email exists, a reset code has been sent'
-        });
+        logger.warn('Password reset attempt for banned account', { email, ip_address: device_context.ip_address });
+        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
       }
 
-      // Generate OTP for password reset
       const { otp, otp_id } = await otpService.generateOTP({
         user_id: user._id.toString(),
         type: 'password_reset',
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'user_requested'
         }
       });
 
-      // Log the event
       await AuditService.logAuthEvent({
         user_id: user._id.toString(),
         event_type: 'password_reset_requested',
         success: true,
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
-      // TODO: Send OTP via email service
-      // In production, you would publish an event or call email service
       logger.info('Password reset OTP generated', { 
         user_id: user._id.toString(), 
         otp_id,
-        // Remove this in production - only for development
         otp: process.env.NODE_ENV === 'development' ? otp : undefined
       });
 
-      res.json({
-        success: true,
-        message: 'If the email exists, a reset code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
     } catch (error: any) {
       logger.error('Password reset request error:', error);
-
-      // Still return success to prevent email enumeration
-      res.json({
-        success: true,
-        message: 'If the email exists, a reset code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
     }
   }
 
-  /**
-   * POST /auth/password/reset/confirm
-   * Confirm password reset with OTP
-   */
   async confirmPasswordReset(req: Request, res: Response) {
     try {
       const { email, otp, new_password } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
-      // Find user by email
       const user = await User.findOne({ email: email.toLowerCase() });
       if (!user) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid reset request',
-          error_code: 'INVALID_RESET_REQUEST'
-        });
+        return sendError(res, AUTH_ERROR_CODES.VALIDATION_ERROR, undefined, 'Invalid reset request');
       }
 
-      // Verify OTP
       const otp_result = await otpService.verifyOTP({
         user_id: user._id.toString(),
         otp,
         type: 'password_reset',
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
@@ -224,33 +138,20 @@ export class PasswordController {
           event_type: 'password_reset_failed',
           success: false,
           metadata: {
-            ip_address,
-            user_agent,
+            ip_address: device_context.ip_address,
+            user_agent: device_context.user_agent,
             failure_reason: otp_result.error || 'Invalid OTP'
           }
         });
 
-        return res.status(400).json({
-          success: false,
-          error: otp_result.error === 'OTP_MAX_ATTEMPTS_EXCEEDED' 
-            ? 'Too many attempts. Please request a new code.'
-            : 'Invalid or expired reset code',
-          error_code: otp_result.error || 'INVALID_OTP'
-        });
+        return sendError(res, otp_result.error || AUTH_ERROR_CODES.INVALID_OTP);
       }
 
-      // Validate new password strength
       const password_validation = PasswordService.validatePasswordStrength(new_password);
       if (!password_validation.is_valid) {
-        return res.status(400).json({
-          success: false,
-          error: 'Password does not meet requirements',
-          error_code: 'WEAK_PASSWORD',
-          details: password_validation.errors
-        });
+        return sendError(res, AUTH_ERROR_CODES.WEAK_PASSWORD, password_validation.errors);
       }
 
-      // Check password history
       const security = await UserSecurity.findOne({ user_id: user._id });
       if (security?.password.previous_hashes) {
         const is_reused = await PasswordService.isPasswordReused(
@@ -258,22 +159,16 @@ export class PasswordController {
           security.password.previous_hashes
         );
         if (is_reused) {
-          return res.status(400).json({
-            success: false,
-            error: 'Cannot reuse a recent password',
-            error_code: 'PASSWORD_RECENTLY_USED'
-          });
+          return sendError(res, AUTH_ERROR_CODES.PASSWORD_RECENTLY_USED);
         }
       }
 
-      // Hash and update password
       const old_hash = user.password_hash;
       const new_hash = await PasswordService.hashPassword(new_password);
 
       user.password_hash = new_hash;
       await user.save();
 
-      // Update security record
       if (security) {
         const previous_hashes = security.password.previous_hashes || [];
         previous_hashes.unshift(old_hash);
@@ -284,10 +179,7 @@ export class PasswordController {
         await security.save();
       }
 
-      // Revoke all existing tokens (security measure)
       await tokenService.revokeAllUserTokens(user._id.toString(), 'password_change');
-
-      // Invalidate all OTPs for this user
       await otpService.invalidateAllUserOTPs(user._id.toString());
 
       await AuditService.logAuthEvent({
@@ -295,77 +187,54 @@ export class PasswordController {
         event_type: 'password_reset_completed',
         success: true,
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
       logger.info('Password reset completed', { user_id: user._id.toString() });
 
-      res.json({
-        success: true,
-        message: 'Password reset successfully. Please login with your new password.'
-      });
+      return sendSuccess(res, undefined, 'Password reset successfully. Please login with your new password.');
     } catch (error: any) {
       logger.error('Password reset confirmation error:', error);
-
-      res.status(500).json({
-        success: false,
-        error: 'Failed to reset password',
-        error_code: 'PASSWORD_RESET_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.PASSWORD_RESET_FAILED);
     }
   }
 
-  // ============================================
-  // ADMIN PASSWORD RESET (Request)
-  // ============================================
-
-  /**
-   * POST /auth/admin/password/reset
-   * Request password reset for admin - more restricted
-   */
   async requestAdminPasswordReset(req: Request, res: Response) {
     try {
       const { email } = req.body;
-      const ip_address = (req.ip as string) || 'unknown';
-      const user_agent = req.get('user-agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
-      // Find admin user
       const admin = await User.findOne({ 
         email: email.toLowerCase(),
         role: 'admin',
         is_active: true
       });
 
-      // Always return success to prevent email enumeration
       if (!admin) {
-        logger.warn('Admin password reset attempt for non-admin email', { email, ip_address });
+        logger.warn('Admin password reset attempt for non-admin email', { email, ip_address: device_context.ip_address });
         
         await AuditService.logSuspiciousActivity(
           undefined,
           'Admin password reset attempt for non-admin',
           {
-            ip_address,
-            user_agent,
+            ip_address: device_context.ip_address,
+            user_agent: device_context.user_agent,
             risk_factors: ['admin_reset_attempt', 'email_mismatch'],
             attempted_email: email
           }
         );
 
-        return res.json({
-          success: true,
-          message: 'If the email exists, a reset code has been sent'
-        });
+        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
       }
 
-      // Generate OTP for password reset
       const { otp, otp_id } = await otpService.generateOTP({
         user_id: admin._id.toString(),
         type: 'password_reset',
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'admin_requested'
         }
       });
@@ -375,8 +244,8 @@ export class PasswordController {
         event_type: 'password_reset_requested',
         success: true,
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
@@ -386,65 +255,33 @@ export class PasswordController {
         otp: process.env.NODE_ENV === 'development' ? otp : undefined
       });
 
-      res.json({
-        success: true,
-        message: 'If the email exists, a reset code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
     } catch (error: any) {
       logger.error('Admin password reset request error:', error);
-
-      res.json({
-        success: true,
-        message: 'If the email exists, a reset code has been sent'
-      });
+      return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
     }
   }
 
-  // ============================================
-  // PASSWORD VALIDATION
-  // ============================================
-
-  /**
-   * POST /auth/password/validate
-   * Validate password strength (public endpoint for client-side feedback)
-   */
   async validatePassword(req: Request, res: Response) {
     try {
       const { password } = req.body;
 
       const validation = PasswordService.validatePasswordStrength(password);
-
-      // Check if password is breached
       const is_breached = await PasswordService.checkPasswordBreach(password);
 
-      res.json({
-        success: true,
-        data: {
-          is_valid: validation.is_valid && !is_breached,
-          strength_score: validation.strength_score,
-          errors: validation.errors,
-          is_breached,
-          suggestions: this.getPasswordSuggestions(validation, is_breached)
-        }
+      return sendSuccess(res, {
+        is_valid: validation.is_valid && !is_breached,
+        strength_score: validation.strength_score,
+        errors: validation.errors,
+        is_breached,
+        suggestions: this.getPasswordSuggestions(validation, is_breached)
       });
     } catch (error: any) {
       logger.error('Password validation error:', error);
-
-      res.status(500).json({
-        success: false,
-        error: 'Failed to validate password',
-        error_code: 'VALIDATION_FAILED'
-      });
+      return sendError(res, AUTH_ERROR_CODES.VALIDATION_ERROR);
     }
   }
 
-  // ============================================
-  // HELPERS
-  // ============================================
-
-  /**
-   * Get password improvement suggestions
-   */
   private getPasswordSuggestions(
     validation: { is_valid: boolean; errors: string[]; strength_score?: number },
     is_breached: boolean
