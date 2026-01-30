@@ -4,6 +4,7 @@ import { userService } from '../services/auth.user.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { sendSuccess, sendError, sendCreated, sendNotFound } from '../../../shared/utils/response.utils';
 import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
+import { extractDeviceContext, getAuditMetadata } from '../../../shared/utils/request.utils';
 
 const logger = createLogger('auth-admin-controller');
 
@@ -50,7 +51,7 @@ export class AdminController {
     } catch (error: any) {
       logger.error('Get user details error:', error);
 
-      if (error.message === 'USER_NOT_FOUND') {
+      if (error.message === AUTH_ERROR_CODES.USER_NOT_FOUND) {
         return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
@@ -73,14 +74,11 @@ export class AdminController {
         reason,
         banned_until: banned_until ? new Date(banned_until) : undefined,
         admin_id,
-        device_context: {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        device_context: getAuditMetadata(req)
       });
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -101,17 +99,14 @@ export class AdminController {
       const result = await adminService.unbanUser(
         userId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
-        if (result.error === 'USER_NOT_BANNED') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_BANNED) {
           return sendError(res, AUTH_ERROR_CODES.USER_NOT_BANNED);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -134,15 +129,15 @@ export class AdminController {
         userId,
         reason || 'Deactivated by admin',
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === AUTH_ERROR_CODES.CANNOT_DEACTIVATE_ADMIN) {
+          return sendError(res, AUTH_ERROR_CODES.CANNOT_DEACTIVATE_ADMIN);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
@@ -162,17 +157,14 @@ export class AdminController {
       const result = await adminService.reactivateUser(
         userId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
-        if (result.error === 'USER_ALREADY_ACTIVE') {
+        if (result.error === AUTH_ERROR_CODES.USER_ALREADY_ACTIVE) {
           return sendError(res, AUTH_ERROR_CODES.USER_ALREADY_ACTIVE);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -199,15 +191,15 @@ export class AdminController {
         userId,
         role,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+        }
+        if (result.error === AUTH_ERROR_CODES.CANNOT_CHANGE_ADMIN_ROLE) {
+          return sendError(res, AUTH_ERROR_CODES.CANNOT_CHANGE_ADMIN_ROLE);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
       }
@@ -227,17 +219,14 @@ export class AdminController {
       const result = await adminService.verifyOrganizer(
         userId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
-        if (result.error === 'USER_NOT_ORGANIZER') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_ORGANIZER) {
           return sendError(res, AUTH_ERROR_CODES.USER_NOT_ORGANIZER);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -258,14 +247,11 @@ export class AdminController {
       const result = await adminService.forceVerifyEmail(
         userId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -288,10 +274,7 @@ export class AdminController {
         userId,
         reason || 'Admin action',
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
@@ -330,10 +313,7 @@ export class AdminController {
         userId,
         sessionId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
@@ -355,17 +335,14 @@ export class AdminController {
       const result = await adminService.unlockAccount(
         userId,
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
-        if (result.error === 'USER_NOT_FOUND') {
+        if (result.error === AUTH_ERROR_CODES.USER_NOT_FOUND) {
           return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
         }
-        if (result.error === 'ACCOUNT_NOT_LOCKED') {
+        if (result.error === AUTH_ERROR_CODES.ACCOUNT_NOT_LOCKED) {
           return sendError(res, AUTH_ERROR_CODES.ACCOUNT_NOT_LOCKED);
         }
         return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
@@ -388,10 +365,7 @@ export class AdminController {
         userId,
         reason || 'Admin requested password reset',
         admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {
@@ -519,10 +493,7 @@ export class AdminController {
         email,
         password,
         { first_name, last_name, username },
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       return sendCreated(res, {
@@ -533,11 +504,11 @@ export class AdminController {
     } catch (error: any) {
       logger.error('Setup admin error:', error);
 
-      if (error.message === 'ADMIN_ALREADY_EXISTS') {
+      if (error.message === AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS) {
         return sendError(res, AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS);
       }
 
-      if (error.message === 'ADMIN_PASSWORD_TOO_WEAK') {
+      if (error.message === AUTH_ERROR_CODES.ADMIN_PASSWORD_TOO_WEAK) {
         return sendError(res, AUTH_ERROR_CODES.ADMIN_PASSWORD_TOO_WEAK);
       }
 
@@ -553,10 +524,7 @@ export class AdminController {
       const result = await adminService.forceAdmin2FASetup(
         adminId,
         requesting_admin_id,
-        {
-          ip_address: req.ip || 'unknown',
-          user_agent: req.get('user-agent') || 'unknown'
-        }
+        getAuditMetadata(req)
       );
 
       if (!result.success) {

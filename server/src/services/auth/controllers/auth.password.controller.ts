@@ -7,14 +7,27 @@ import { AuditService } from '../services/auth.audit.service';
 import { AuthRequest } from '../middlewares/auth.jwt.middleware';
 import { User, UserSecurity } from '../../../models/user.model';
 import { createLogger } from '../../../shared/utils/logger.utils';
-import { sendSuccess, sendError, sendUnauthorized, sendNotFound } from '../../../shared/utils/response.utils';
+import { sendSuccess, sendError, sendUnauthorized } from '../../../shared/utils/response.utils';
 import { extractDeviceContext } from '../../../shared/utils/request.utils';
 import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-password-controller');
 
+/**
+ * Password Controller
+ * Handles password change, reset, and validation for users and admins
+ */
+
 export class PasswordController {
 
+  // ============================================
+  // PASSWORD CHANGE (Authenticated)
+  // ============================================
+
+  /**
+   * POST /auth/password/change
+   * Change password for authenticated user
+   */
   async changePassword(req: AuthRequest, res: Response) {
     try {
       const user_id = req.user?.user_id;
@@ -22,7 +35,7 @@ export class PasswordController {
       const device_context = extractDeviceContext(req);
 
       if (!user_id) {
-        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
+        return sendUnauthorized(res, AUTH_ERROR_CODES.AUTH_REQUIRED);
       }
 
       await userService.changePassword(
@@ -36,20 +49,20 @@ export class PasswordController {
     } catch (error: any) {
       logger.error('Password change error:', error);
 
-      if (error.message === 'USER_NOT_FOUND') {
-        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+      if (error.message === AUTH_ERROR_CODES.USER_NOT_FOUND) {
+        return sendError(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      if (error.message === 'INVALID_CURRENT_PASSWORD') {
+      if (error.message === AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD) {
         return sendError(res, AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD);
       }
 
-      if (error.message.startsWith('WEAK_PASSWORD')) {
-        const errors = error.message.replace('WEAK_PASSWORD:', '').split('|');
+      if (error.message.startsWith(AUTH_ERROR_CODES.WEAK_PASSWORD)) {
+        const errors = error.message.replace(`${AUTH_ERROR_CODES.WEAK_PASSWORD}:`, '').split('|');
         return sendError(res, AUTH_ERROR_CODES.WEAK_PASSWORD, errors);
       }
 
-      if (error.message === 'PASSWORD_RECENTLY_USED') {
+      if (error.message === AUTH_ERROR_CODES.PASSWORD_RECENTLY_USED) {
         return sendError(res, AUTH_ERROR_CODES.PASSWORD_RECENTLY_USED);
       }
 
@@ -57,6 +70,15 @@ export class PasswordController {
     }
   }
 
+  // ============================================
+  // PASSWORD RESET (Forgot Password)
+  // ============================================
+
+  /**
+   * POST /auth/password/reset
+   * Request password reset - sends OTP to email
+   * Always returns success to prevent email enumeration
+   */
   async requestPasswordReset(req: Request, res: Response) {
     try {
       const { email } = req.body;
@@ -64,18 +86,8 @@ export class PasswordController {
 
       const user = await userService.getUserByEmail(email);
 
-      if (!user) {
-        logger.warn('Password reset attempt for non-existent email', { email, ip_address: device_context.ip_address });
-        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
-      }
-
-      if (!user.is_active) {
-        logger.warn('Password reset attempt for inactive account', { email, ip_address: device_context.ip_address });
-        return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
-      }
-
-      if (user.is_banned) {
-        logger.warn('Password reset attempt for banned account', { email, ip_address: device_context.ip_address });
+      if (!user || !user.is_active || user.is_banned) {
+        logger.warn('Password reset attempt for invalid account', { email, ip_address: device_context.ip_address });
         return sendSuccess(res, undefined, 'If the email exists, a reset code has been sent');
       }
 
@@ -99,8 +111,8 @@ export class PasswordController {
         }
       });
 
-      logger.info('Password reset OTP generated', { 
-        user_id: user._id.toString(), 
+      logger.info('Password reset OTP generated', {
+        user_id: user._id.toString(),
         otp_id,
         otp: process.env.NODE_ENV === 'development' ? otp : undefined
       });
@@ -112,6 +124,10 @@ export class PasswordController {
     }
   }
 
+  /**
+   * POST /auth/password/reset/confirm
+   * Confirm password reset with OTP
+   */
   async confirmPasswordReset(req: Request, res: Response) {
     try {
       const { email, otp, new_password } = req.body;
@@ -119,7 +135,7 @@ export class PasswordController {
 
       const user = await User.findOne({ email: email.toLowerCase() });
       if (!user) {
-        return sendError(res, AUTH_ERROR_CODES.VALIDATION_ERROR, undefined, 'Invalid reset request');
+        return sendError(res, AUTH_ERROR_CODES.INVALID_CODE, undefined, 'Invalid reset request');
       }
 
       const otp_result = await otpService.verifyOTP({
@@ -144,7 +160,14 @@ export class PasswordController {
           }
         });
 
-        return sendError(res, otp_result.error || AUTH_ERROR_CODES.INVALID_OTP);
+        return sendError(
+          res,
+          otp_result.error || AUTH_ERROR_CODES.INVALID_OTP,
+          undefined,
+          otp_result.error === AUTH_ERROR_CODES.OTP_MAX_ATTEMPTS
+            ? 'Too many attempts. Please request a new code.'
+            : 'Invalid or expired reset code'
+        );
       }
 
       const password_validation = PasswordService.validatePasswordStrength(new_password);
@@ -201,12 +224,20 @@ export class PasswordController {
     }
   }
 
+  // ============================================
+  // ADMIN PASSWORD RESET (Request)
+  // ============================================
+
+  /**
+   * POST /auth/admin/password/reset
+   * Request password reset for admin - more restricted
+   */
   async requestAdminPasswordReset(req: Request, res: Response) {
     try {
       const { email } = req.body;
       const device_context = extractDeviceContext(req);
 
-      const admin = await User.findOne({ 
+      const admin = await User.findOne({
         email: email.toLowerCase(),
         role: 'admin',
         is_active: true
@@ -214,7 +245,7 @@ export class PasswordController {
 
       if (!admin) {
         logger.warn('Admin password reset attempt for non-admin email', { email, ip_address: device_context.ip_address });
-        
+
         await AuditService.logSuspiciousActivity(
           undefined,
           'Admin password reset attempt for non-admin',
@@ -249,8 +280,8 @@ export class PasswordController {
         }
       });
 
-      logger.info('Admin password reset OTP generated', { 
-        user_id: admin._id.toString(), 
+      logger.info('Admin password reset OTP generated', {
+        user_id: admin._id.toString(),
         otp_id,
         otp: process.env.NODE_ENV === 'development' ? otp : undefined
       });
@@ -262,6 +293,14 @@ export class PasswordController {
     }
   }
 
+  // ============================================
+  // PASSWORD VALIDATION
+  // ============================================
+
+  /**
+   * POST /auth/password/validate
+   * Validate password strength (public endpoint for client-side feedback)
+   */
   async validatePassword(req: Request, res: Response) {
     try {
       const { password } = req.body;
@@ -282,6 +321,13 @@ export class PasswordController {
     }
   }
 
+  // ============================================
+  // HELPERS
+  // ============================================
+
+  /**
+   * Get password improvement suggestions
+   */
   private getPasswordSuggestions(
     validation: { is_valid: boolean; errors: string[]; strength_score?: number },
     is_breached: boolean

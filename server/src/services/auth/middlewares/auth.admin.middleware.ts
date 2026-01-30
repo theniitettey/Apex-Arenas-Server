@@ -4,6 +4,7 @@ import { AuthError } from './auth.error.middleware';
 import { AuditService } from '../services/auth.audit.service';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-admin-middleware');
 
@@ -18,7 +19,11 @@ export const verifyAdminWhitelist = async (
 ) => {
   try {
     if (!req.user) {
-      throw new AuthError('Authentication required', 401, 'AUTH_REQUIRED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.AUTH_REQUIRED,
+        401,
+        AUTH_ERROR_CODES.AUTH_REQUIRED
+      );
     }
 
     // Get whitelisted admin emails
@@ -50,7 +55,11 @@ export const verifyAdminWhitelist = async (
         }
       );
 
-      throw new AuthError('Admin access denied', 403, 'ADMIN_NOT_WHITELISTED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.ADMIN_NOT_WHITELISTED,
+        403,
+        AUTH_ERROR_CODES.ADMIN_NOT_WHITELISTED
+      );
     }
 
     next();
@@ -106,7 +115,11 @@ export const requireSuperAdmin = async (
 ) => {
   try {
     if (!req.user) {
-      throw new AuthError('Authentication required', 401, 'AUTH_REQUIRED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.AUTH_REQUIRED,
+        401,
+        AUTH_ERROR_CODES.AUTH_REQUIRED
+      );
     }
 
     // Get super admin emails (first email in the list is typically super admin)
@@ -125,7 +138,11 @@ export const requireSuperAdmin = async (
         email: req.user.email,
         path: req.path
       });
-      throw new AuthError('Super admin access required', 403, 'SUPER_ADMIN_REQUIRED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.SUPER_ADMIN_REQUIRED,
+        403,
+        AUTH_ERROR_CODES.SUPER_ADMIN_REQUIRED
+      );
     }
 
     next();
@@ -147,7 +164,11 @@ export const preventSelfAction = async (
 ) => {
   try {
     if (!req.user) {
-      throw new AuthError('Authentication required', 401, 'AUTH_REQUIRED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.AUTH_REQUIRED,
+        401,
+        AUTH_ERROR_CODES.AUTH_REQUIRED
+      );
     }
 
     const target_user_id = req.params.userId || req.params.adminId || req.body.user_id;
@@ -158,7 +179,11 @@ export const preventSelfAction = async (
         action: req.path,
         method: req.method
       });
-      throw new AuthError('Cannot perform this action on yourself', 400, 'SELF_ACTION_NOT_ALLOWED');
+      throw new AuthError(
+        AUTH_ERROR_CODES.SELF_ACTION_NOT_ALLOWED,
+        400,
+        AUTH_ERROR_CODES.SELF_ACTION_NOT_ALLOWED
+      );
     }
 
     next();

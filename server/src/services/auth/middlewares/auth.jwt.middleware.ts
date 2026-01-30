@@ -6,6 +6,8 @@ import { AuditService } from '../services/auth.audit.service';
 import { User, UserSecurity } from '../../../models/user.model';
 import { AuthError } from './auth.error.middleware';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
+import { extractDeviceContext } from '../../../shared/utils/request.utils';
 
 const logger = createLogger('auth-jwt-middleware');
 
@@ -44,7 +46,7 @@ const checkAndBlockSuspiciousIP = async (
     const is_blocked = await redisManager.isIPBlocked(ip_address);
     if (is_blocked) {
       logger.warn('Blocked IP attempted access', { ip_address });
-      return { blocked: true, reason: 'IP is temporarily blocked due to suspicious activity' };
+      return { blocked: true, reason: AUTH_ERROR_CODES.IP_BLOCKED };
     }
 
     // Check if IP has suspicious activity in audit logs
@@ -61,13 +63,13 @@ const checkAndBlockSuspiciousIP = async (
         metadata: {
           ip_address,
           user_agent,
-          failure_reason: 'IP blocked due to suspicious activity',
+          failure_reason: AUTH_ERROR_CODES.IP_BLOCKED,
           is_suspicious: true,
           risk_factors: ['suspicious_ip_blocked']
         }
       });
 
-      return { blocked: true, reason: 'IP is temporarily blocked due to suspicious activity' };
+      return { blocked: true, reason: AUTH_ERROR_CODES.IP_BLOCKED };
     }
 
     return { blocked: false };
@@ -88,13 +90,12 @@ export const userAuthMiddleware = async (
   next: NextFunction
 ) => {
   try {
-    const ip_address = req.ip || 'unknown';
-    const user_agent = req.get('user-agent') || 'unknown';
+    const device_context = extractDeviceContext(req);
 
     // CHECK FOR SUSPICIOUS IP AND BLOCK
-    const ip_check = await checkAndBlockSuspiciousIP(ip_address, user_agent);
+    const ip_check = await checkAndBlockSuspiciousIP(device_context.ip_address, device_context.user_agent);
     if (ip_check.blocked) {
-      throw new AuthError(ip_check.reason || 'Access denied', 403, 'IP_BLOCKED');
+      throw new AuthError(ip_check.reason || AUTH_ERROR_CODES.IP_BLOCKED, 403, AUTH_ERROR_CODES.IP_BLOCKED);
     }
 
     const token = extractBearerToken(req);
@@ -104,7 +105,7 @@ export const userAuthMiddleware = async (
         path: req.path,
         ip: req.ip
       });
-      throw new AuthError('Access token required', 401, 'MISSING_TOKEN');
+      throw new AuthError(AUTH_ERROR_CODES.MISSING_TOKEN, 401, AUTH_ERROR_CODES.MISSING_TOKEN);
     }
 
     // Check if token is blacklisted
@@ -112,7 +113,7 @@ export const userAuthMiddleware = async (
     const is_blacklisted = await redisManager.isTokenBlacklisted(token_hash);
     if (is_blacklisted) {
       logger.warn('Blacklisted token used', { path: req.path, ip: req.ip });
-      throw new AuthError('Token has been revoked', 401, 'TOKEN_REVOKED');
+      throw new AuthError(AUTH_ERROR_CODES.TOKEN_REVOKED, 401, AUTH_ERROR_CODES.TOKEN_REVOKED);
     }
 
     // Verify token
@@ -125,25 +126,27 @@ export const userAuthMiddleware = async (
         error: verification.error
       });
       throw new AuthError(
-        verification.error === 'TOKEN_EXPIRED' ? 'Access token expired' : 'Invalid access token',
+        verification.error === AUTH_ERROR_CODES.TOKEN_EXPIRED
+          ? AUTH_ERROR_CODES.TOKEN_EXPIRED
+          : AUTH_ERROR_CODES.INVALID_TOKEN,
         401,
-        verification.error || 'INVALID_TOKEN'
+        verification.error || AUTH_ERROR_CODES.INVALID_TOKEN
       );
     }
 
     // Check if user is still active and not banned
     const user = await User.findById(verification.payload.user_id).select('is_active is_banned');
     if (!user || !user.is_active) {
-      throw new AuthError('Account is inactive', 401, 'ACCOUNT_INACTIVE');
+      throw new AuthError(AUTH_ERROR_CODES.ACCOUNT_INACTIVE, 401, AUTH_ERROR_CODES.ACCOUNT_INACTIVE);
     }
     if (user.is_banned) {
-      throw new AuthError('Account is banned', 403, 'ACCOUNT_BANNED');
+      throw new AuthError(AUTH_ERROR_CODES.ACCOUNT_BANNED, 403, AUTH_ERROR_CODES.ACCOUNT_BANNED);
     }
 
     // Check if password change is required
     const security = await UserSecurity.findOne({ user_id: verification.payload.user_id });
     if (security?.password.change_required) {
-      throw new AuthError('Password change required', 403, 'PASSWORD_CHANGE_REQUIRED');
+      throw new AuthError(AUTH_ERROR_CODES.PASSWORD_CHANGE_REQUIRED, 403, AUTH_ERROR_CODES.PASSWORD_CHANGE_REQUIRED);
     }
 
     // Attach user to request
@@ -165,7 +168,7 @@ export const userAuthMiddleware = async (
       return next(error);
     }
     logger.error('User auth middleware error', { error });
-    next(new AuthError('Authentication failed', 401, 'AUTH_FAILED'));
+    next(new AuthError(AUTH_ERROR_CODES.AUTH_FAILED, 401, AUTH_ERROR_CODES.AUTH_FAILED));
   }
 };
 
@@ -179,13 +182,12 @@ export const adminAuthMiddleware = async (
   next: NextFunction
 ) => {
   try {
-    const ip_address = req.ip || 'unknown';
-    const user_agent = req.get('user-agent') || 'unknown';
+    const device_context = extractDeviceContext(req);
 
     // CHECK FOR SUSPICIOUS IP AND BLOCK (stricter for admin)
-    const ip_check = await checkAndBlockSuspiciousIP(ip_address, user_agent);
+    const ip_check = await checkAndBlockSuspiciousIP(device_context.ip_address, device_context.user_agent);
     if (ip_check.blocked) {
-      throw new AuthError(ip_check.reason || 'Access denied', 403, 'IP_BLOCKED');
+      throw new AuthError(ip_check.reason || AUTH_ERROR_CODES.IP_BLOCKED, 403, AUTH_ERROR_CODES.IP_BLOCKED);
     }
 
     const token = extractBearerToken(req);
@@ -195,7 +197,7 @@ export const adminAuthMiddleware = async (
         path: req.path,
         ip: req.ip
       });
-      throw new AuthError('Admin access token required', 401, 'MISSING_TOKEN');
+      throw new AuthError(AUTH_ERROR_CODES.MISSING_TOKEN, 401, AUTH_ERROR_CODES.MISSING_TOKEN);
     }
 
     // Check if token is blacklisted
@@ -203,7 +205,7 @@ export const adminAuthMiddleware = async (
     const is_blacklisted = await redisManager.isTokenBlacklisted(token_hash);
     if (is_blacklisted) {
       logger.warn('Blacklisted admin token used', { path: req.path, ip: req.ip });
-      throw new AuthError('Token has been revoked', 401, 'TOKEN_REVOKED');
+      throw new AuthError(AUTH_ERROR_CODES.TOKEN_REVOKED, 401, AUTH_ERROR_CODES.TOKEN_REVOKED);
     }
 
     // Verify admin token (uses different secret)
@@ -216,9 +218,11 @@ export const adminAuthMiddleware = async (
         error: verification.error
       });
       throw new AuthError(
-        verification.error === 'TOKEN_EXPIRED' ? 'Admin access token expired' : 'Invalid admin access token',
+        verification.error === AUTH_ERROR_CODES.TOKEN_EXPIRED
+          ? AUTH_ERROR_CODES.TOKEN_EXPIRED
+          : AUTH_ERROR_CODES.INVALID_TOKEN,
         401,
-        verification.error || 'INVALID_TOKEN'
+        verification.error || AUTH_ERROR_CODES.INVALID_TOKEN
       );
     }
 
@@ -229,13 +233,13 @@ export const adminAuthMiddleware = async (
         role: verification.payload.role,
         path: req.path
       });
-      throw new AuthError('Admin access required', 403, 'ADMIN_REQUIRED');
+      throw new AuthError(AUTH_ERROR_CODES.ADMIN_REQUIRED, 403, AUTH_ERROR_CODES.ADMIN_REQUIRED);
     }
 
     // Check if admin is still active
     const admin = await User.findById(verification.payload.user_id).select('is_active role');
     if (!admin || !admin.is_active || admin.role !== 'admin') {
-      throw new AuthError('Admin account is inactive or invalid', 401, 'ADMIN_INACTIVE');
+      throw new AuthError(AUTH_ERROR_CODES.ADMIN_INACTIVE, 401, AUTH_ERROR_CODES.ADMIN_INACTIVE);
     }
 
     // Attach user to request
@@ -256,7 +260,7 @@ export const adminAuthMiddleware = async (
       return next(error);
     }
     logger.error('Admin auth middleware error', { error });
-    next(new AuthError('Admin authentication failed', 401, 'ADMIN_AUTH_FAILED'));
+    next(new AuthError(AUTH_ERROR_CODES.AUTH_FAILED, 401, AUTH_ERROR_CODES.AUTH_FAILED));
   }
 };
 
@@ -303,7 +307,7 @@ export const optionalAuthMiddleware = async (
 export const requireRole = (...allowed_roles: ('player' | 'organizer' | 'admin')[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return next(new AuthError('Authentication required', 401, 'AUTH_REQUIRED'));
+      return next(new AuthError(AUTH_ERROR_CODES.AUTH_REQUIRED, 401, AUTH_ERROR_CODES.AUTH_REQUIRED));
     }
 
     if (!allowed_roles.includes(req.user.role)) {

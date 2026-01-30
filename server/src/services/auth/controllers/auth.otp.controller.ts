@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { otpService } from '../services/auth.otp.service';
 import { userService } from '../services/auth.user.service';
-import { AuditService } from '../services/auth.audit.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { sendSuccess, sendError, sendUnauthorized, sendRateLimited } from '../../../shared/utils/response.utils';
+import { extractDeviceContext } from '../../../shared/utils/request.utils';
 import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('auth-otp-controller');
@@ -23,8 +23,7 @@ export class OTPController {
   async generateOTP(req: Request, res: Response): Promise<void> {
     try {
       const { email, type } = req.body;
-      const ip_address = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-      const user_agent = req.get('User-Agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
       if (!email || !type) {
         sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Email and OTP type are required');
@@ -39,7 +38,7 @@ export class OTPController {
       const user = await userService.getUserByEmail(email);
 
       if (!user) {
-        logger.warn('OTP generation attempt for non-existent email', { email, type, ip_address });
+        logger.warn('OTP generation attempt for non-existent email', { email, type, ip_address: device_context.ip_address });
         sendSuccess(res, undefined, 'If the email exists, an OTP has been sent');
         return;
       }
@@ -54,8 +53,8 @@ export class OTPController {
         user_id: user._id.toString(),
         type: type as OTPType,
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'user_requested'
         }
       });
@@ -73,8 +72,7 @@ export class OTPController {
   async verifyOTP(req: Request, res: Response): Promise<void> {
     try {
       const { email, otp, type } = req.body;
-      const ip_address = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-      const user_agent = req.get('User-Agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
       if (!email || !otp || !type) {
         sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Email, OTP, and type are required');
@@ -97,8 +95,8 @@ export class OTPController {
         otp,
         type: type as OTPType,
         metadata: {
-          ip_address,
-          user_agent
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent
         }
       });
 
@@ -149,8 +147,7 @@ export class OTPController {
   async resendOTP(req: Request, res: Response): Promise<void> {
     try {
       const { email, type } = req.body;
-      const ip_address = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-      const user_agent = req.get('User-Agent') || 'unknown';
+      const device_context = extractDeviceContext(req);
 
       if (!email || !type) {
         sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Email and OTP type are required');
@@ -165,7 +162,7 @@ export class OTPController {
       const user = await userService.getUserByEmail(email);
 
       if (!user) {
-        logger.warn('OTP resend attempt for non-existent email', { email, type, ip_address });
+        logger.warn('OTP resend attempt for non-existent email', { email, type, ip_address: device_context.ip_address });
         sendSuccess(res, undefined, 'If the email exists, an OTP has been sent');
         return;
       }
@@ -180,8 +177,8 @@ export class OTPController {
         user_id: user._id.toString(),
         type: type as OTPType,
         metadata: {
-          ip_address,
-          user_agent,
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
           request_reason: 'resend_requested'
         }
       });

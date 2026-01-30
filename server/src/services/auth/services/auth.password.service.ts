@@ -199,7 +199,7 @@ export class PasswordService {
         method: 'GET',
         headers: {
           'User-Agent': `${env.APP_NAME}-PasswordChecker`,
-          'Add-Padding': 'true', // Adds padding to prevent response length analysis
+          'Add-Padding': 'true', 
         },
         signal: controller.signal,
       });

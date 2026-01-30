@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import registerRoutes from './auth.register.route';
-import loginRoutes from './auth.login.route';
-import tokenRoutes from './auth.token.route';
-import passwordRoutes from './auth.password.route';
 import adminRoutes from './auth.admin.route';
+import loginRoutes from './auth.login.route';
 import otpRoutes from './auth.otp.routes';
+import passwordRoutes from './auth.password.route';
+import registerRoutes from './auth.register.route';
+import tokenRoutes from './auth.token.route';
+import userRoutes from './auth.user.route';
 
 const router: Router = Router();
 
@@ -25,5 +26,8 @@ router.use('/admin', adminRoutes);
 
 // Mount OTP routes
 router.use('/otp', otpRoutes);
+
+// User routes
+router.use('/user', userRoutes);
 
 export default router;

@@ -1,8 +1,6 @@
 import dotenv from 'dotenv';
 import {cleanEnv, str, num, bool} from 'envalid';
-import { createLogger } from '../shared/utils/logger.utils';
 
-const logger = createLogger('env-config');
 
 dotenv.config();
 
@@ -134,29 +132,29 @@ export const env = cleanEnv(process.env, {
   EMAIL_FROM_SUPPORT: str({ default: 'support@apexarenas.com' }),
   EMAIL_ENABLED: bool({ default: true }),
   EMAIL_REPLY_TO: str({ default: 'support@apexarenas.com' }),
-
+  
 });
+
 
 
 // Custom Validation Logic (if needed)
 
 (() => {
   if (env.JWT_ACCESS_SECRET.length < 32 || env.JWT_REFRESH_SECRET.length < 32) {
-    logger.error('JWT secrets must be at least 32 characters long');
+     throw new Error('JWT secrets must be at least 32 characters long');
     process.exit(1);
   }
 
   if (!env.MONGODB_URI.startsWith('mongodb://') && !env.MONGODB_URI.startsWith('mongodb+srv://')) {
-    logger.error('MONGODB_URI must start with "mongodb://" or "mongodb+srv://"');
+     throw new Error('MONGODB_URI must start with "mongodb://" or "mongodb+srv://"');
     process.exit(1);
   }
 
   if (!env.REDIS_HOST) {
-    logger.error('REDIS_HOST is required');
+     throw new Error('REDIS_HOST is required');
     process.exit(1);
   }
 
-  logger.info('Environment variables validated successfully');
 
 })();
 
@@ -197,3 +195,4 @@ export const jwtOptions = {
     issuer_admin: env.JWT_ISSUER_ADMIN,
   },
 };
+
