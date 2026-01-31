@@ -387,8 +387,8 @@ export interface IApexRateLimit {
 
 
 const ApexUserSchema = new Schema<IApexUser>({
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  username: { type: String, required: true, unique: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  username: { type: String, required: true, trim: true },
   password_hash: { type: String, required: true },
   role: { type: String, enum: ['player', 'organizer', 'admin'], default: 'player' },
   
@@ -507,7 +507,7 @@ ApexOTPSchema.index({ user_id: 1, type: 1, used: 1 });
 
 const ApexRefreshTokenSchema = new Schema<IApexRefreshToken>({
   user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  token_hash: { type: String, required: true, unique: true },
+  token_hash: { type: String, required: true},
   family_id: { type: String, required: true },
   generation: { type: Number, default: 0 },
   expires_at: { type: Date, required: true },
@@ -585,7 +585,7 @@ const ApexAuthLogSchema = new Schema<IApexAuthLog>({
     is_suspicious: { type: Boolean, default: false },
     risk_score: { type: Number, min: 0, max: 100 },
     risk_factors: [{ type: String }],
-    admin_id: { type: Schema.Types.ObjectId, ref: 'User' },
+    admin_id: { type: Schema.Types.Mixed, ref: 'User' },
     admin_reason: { type: String }
   }
 }, {
@@ -603,7 +603,7 @@ ApexAuthLogSchema.index({ user_id: 1, success: 1, created_at: -1 });
 
 
 const ApexUserSecuritySchema = new Schema<IApexUserSecurity>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true},
   
   lockout: {
     is_locked: { type: Boolean, default: false },

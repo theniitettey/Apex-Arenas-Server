@@ -200,6 +200,7 @@ export const verify2FASchema = z.object({
 });
 
 export const setup2FAVerifySchema = z.object({
+  user_id: z.string().min(1, 'User ID is required'),
   code: z.string()
     .length(6, 'Code must be 6 digits')
     .regex(/^\d+$/, 'Code must contain only numbers')

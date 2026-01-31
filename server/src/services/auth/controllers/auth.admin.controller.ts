@@ -502,7 +502,11 @@ export class AdminController {
         username: admin.username
       }, 'Admin account created successfully');
     } catch (error: any) {
-      logger.error('Setup admin error:', error);
+      logger.error('Setup admin error:', {
+        message: error.message, 
+        stack: error.stack,
+        name: error.name 
+      });
 
       if (error.message === AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS) {
         return sendError(res, AUTH_ERROR_CODES.ADMIN_ALREADY_EXISTS);

@@ -1,28 +1,60 @@
-import express from 'express';
-import { env } from './configs/env.config';
+import app from './app';
 import { databaseManager } from './configs/database.config';
 import { redisManager } from './configs/redis.config';
-import gatewayRoutes from './gateway/routes';
+import { createLogger } from './shared/utils';
 
-const app = express();
+const logger = createLogger('apex-server');
 
-app.use(express.json());
-app.use('/api', gatewayRoutes);
+const PORT = process.env.PORT
 
-const startServer = async () => {
-  try {
+async function startServer() {
+  try{
+    logger.info("Starting Apex Server");
+
+    logger.info("Connecting to database...");
     await databaseManager.connect();
+
+    logger.info("Connecting to Redis...");
     await redisManager.connect();
 
-    app.listen(env.PORT, () => {
-      // eslint-disable-next-line no-console
-      console.log(`🚀 Server running on http://localhost:${env.PORT}/api`);
+    logger.info("Starting Express server...");
+    app.listen(PORT, () => {
+      logger.info(`Apex Server running on ${PORT}`, {
+        port: PORT,
+        timeStamp: new Date().toISOString()
+      });
     });
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to start server:', error);
+  } catch (error: any) {
+    logger.error("Falied to start server", {
+      error: error.message,
+      stack: error.stack,
+    });
     process.exit(1);
   }
-};
+}
+
+async function gracefulShutdown(signal: string) {
+  logger.info(`Received ${signal}, starting graceful shutdown...`);
+  try {
+    logger.info("Closing redis connection...");
+    await redisManager.disconnect();
+    logger.info("Closing database connection...");
+    await databaseManager.disconnect();
+    logger.info("Shutdown complete, exiting process.");
+    process.exit(0);
+  } catch (error: any) {
+    logger.error('Error during graceful shutdown', {error: error.message, stack: error.stack});
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception', {error: error.message, stack: error.stack});
+  process.exit(1);
+})
+
 
 startServer();

@@ -233,12 +233,64 @@ export class LoginController {
 
   async verifyAdmin2FASetup(req: Request, res: Response) {
     try {
+      // ADD THIS FIRST
+      console.log('=== RAW REQUEST DEBUG ===');
+      console.log('req.body:', JSON.stringify(req.body));
+      console.log('req.body keys:', Object.keys(req.body));
+      console.log('Content-Type:', req.headers['content-type']);
+      console.log('req.method:', req.method);
+      console.log('req.url:', req.url);
+      console.log('========================');
+
       const { user_id, code } = req.body;
       const device_context = extractDeviceContext(req);
 
-      if (!user_id || !code) {
-        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS);
+      // DETAILED VALIDATION WITH SPECIFIC ERROR MESSAGES
+      if (!user_id && !code) {
+        logger.error('2FA setup verification - both fields missing', { 
+          body: req.body 
+        });
+        return sendError(
+          res, 
+          AUTH_ERROR_CODES.MISSING_FIELDS,
+          undefined,
+          'Both user_id and code are required'
+        );
       }
+
+      if (!user_id) {
+        logger.error('2FA setup verification - user_id missing', { 
+          body: req.body,
+          received_code: !!code 
+        });
+        return sendError(
+          res, 
+          AUTH_ERROR_CODES.MISSING_FIELDS,
+          undefined,
+          'user_id is required'
+        );
+      }
+
+      if (!code) {
+        logger.error('2FA setup verification - code missing', { 
+          body: req.body,
+          received_user_id: !!user_id 
+        });
+        return sendError(
+          res, 
+          AUTH_ERROR_CODES.MISSING_FIELDS,
+          undefined,
+          'code is required (6-digit code from authenticator app)'
+        );
+      }
+
+      // LOG WHAT WE RECEIVED FOR DEBUGGING
+      logger.info('Attempting 2FA setup verification', {
+        user_id,
+        code_length: code.length,
+        code_type: typeof code,
+        has_device_context: !!device_context
+      });
 
       const result = await twoFactorService.verifyTOTPSetup(
         user_id,
@@ -247,23 +299,45 @@ export class LoginController {
       );
 
       if (!result.success) {
+        logger.error('2FA setup verification failed', {
+          user_id,
+          error: result.error
+        });
+
         return sendError(
           res,
           result.error || AUTH_ERROR_CODES.TWO_FA_SETUP_FAILED,
           undefined,
-          result.error === AUTH_ERROR_CODES.INVALID_CODE ? 'Invalid verification code. Please try again.' : undefined
+          result.error === AUTH_ERROR_CODES.TWO_FA_INVALID_CODE 
+            ? 'Invalid verification code. Please try again with a fresh code from your authenticator app.' 
+            : result.error === AUTH_ERROR_CODES.TWO_FA_NOT_INITIATED
+            ? 'No 2FA setup found. Please scan the QR code first.'
+            : 'Failed to verify 2FA setup. Please try again.'
         );
       }
 
-      logger.info('Admin 2FA setup completed', { user_id });
+      logger.info('Admin 2FA setup completed successfully', { 
+        user_id,
+        backup_codes_count: result.backup_codes?.length || 0
+      });
 
       return sendSuccess(res, {
         enabled: true,
-        backup_codes: result.backup_codes
+        backup_codes: result.backup_codes,
+        message: 'Two-factor authentication has been enabled successfully. Save your backup codes in a safe place!'
       });
     } catch (error: any) {
-      logger.error('Admin 2FA setup verification error:', error);
-      return sendError(res, AUTH_ERROR_CODES.TWO_FA_SETUP_FAILED);
+      logger.error('Admin 2FA setup verification error:', {
+        error: error.message,
+        stack: error.stack,
+        body: req.body
+      });
+      return sendError(
+        res, 
+        AUTH_ERROR_CODES.TWO_FA_SETUP_FAILED,
+        undefined,
+        'An unexpected error occurred during 2FA setup verification'
+      );
     }
   }
 

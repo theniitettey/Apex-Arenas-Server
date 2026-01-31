@@ -47,17 +47,17 @@ class DatabaseManager {
 
   public async connect(): Promise<void> {
     if (this.isConnected) {
-      logger.info('📊 MongoDB already connected');
+      logger.info('MongoDB already connected');
       return;
     }
 
     try {
       const options: mongoose.ConnectOptions = {
-        maxPoolSize: env.MONGODB_POOL_SIZE,
-        connectTimeoutMS: env.MONGODB_CONNECTION_TIMEOUT,
+        maxPoolSize: 10,
+        connectTimeoutMS: 30000,
         socketTimeoutMS: 45000,
+        family: 4,                          
         serverSelectionTimeoutMS: 30000,
-        family: 4,
         retryWrites: true,
         retryReads: true,
       };
@@ -76,12 +76,12 @@ class DatabaseManager {
 
     if (this.connectionAttempts <= this.maxRetries) {
       const delay = this.initialRetryDelay * Math.pow(2, this.connectionAttempts - 1);
-      logger.warn(`🔄 Retrying MongoDB connection in ${delay}ms (attempt ${this.connectionAttempts}/${this.maxRetries})`);
+      logger.warn(`Retrying MongoDB connection in ${delay}ms (attempt ${this.connectionAttempts}/${this.maxRetries})`);
       
       await new Promise(resolve => setTimeout(resolve, delay));
       await this.connect();
     } else {
-      logger.error('💥 Maximum MongoDB connection retries exceeded');
+      logger.error('Maximum MongoDB connection retries exceeded');
       process.exit(1);
     }
   }
@@ -150,15 +150,16 @@ class DatabaseManager {
 
 // Graceful shutdown handling
 process.on('SIGINT', async () => {
-  logger.info('🔄 Received SIGINT, closing MongoDB connection...');
+  logger.info('Received SIGINT, closing MongoDB connection...');
   await DatabaseManager.getInstance().disconnect();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  logger.info('🔄 Received SIGTERM, closing MongoDB connection...');
+  logger.info('Received SIGTERM, closing MongoDB connection...');
   await DatabaseManager.getInstance().disconnect();
   process.exit(0);
 });
+
 
 export const databaseManager = DatabaseManager.getInstance();

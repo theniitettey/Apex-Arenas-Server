@@ -1,9 +1,10 @@
-import express from 'express';
+import express, {Express} from 'express';
 import gatewayRoutes from './gateway/routes';
 
-const app: express.Application = express();
+const app: Express = express();
 
-app.use(express.json());
-app.use('/v1/api', gatewayRoutes);
+app.use(express.json({limit: '10mb'}));
+app.use(express.urlencoded({extended:true}));
+app.use('/api/v1', gatewayRoutes);
 
 export default app;

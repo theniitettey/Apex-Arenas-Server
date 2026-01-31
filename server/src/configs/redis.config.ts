@@ -45,8 +45,6 @@ class RedisManager {
 
   private constructor() {
     const options: RedisOptions = {
-      host: env.REDIS_HOST || 'localhost',
-      port: env.REDIS_PORT || 6379,
       lazyConnect: true,
       maxRetriesPerRequest: 3,
       enableReadyCheck: true,
