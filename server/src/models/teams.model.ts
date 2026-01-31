@@ -83,7 +83,7 @@ export interface IApexTeam extends Document {
 const ApexTeamSchema = new Schema<IApexTeam>({
   name: { type: String, required: true, trim: true, maxlength: 50 },
   tag: { type: String, required: true, trim: true, maxlength: 10, uppercase: true },
-  captain_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  captain_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   game_id: { type: Schema.Types.ObjectId, ref: 'Game', required: true },
   
   description: { type: String, maxlength: 500 },
@@ -98,7 +98,7 @@ const ApexTeamSchema = new Schema<IApexTeam>({
   },
   
   members: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     in_game_id: { type: String, required: true },
     role: { type: String, enum: ['captain', 'player', 'substitute'], default: 'player' },
     position: { type: String },
@@ -107,19 +107,19 @@ const ApexTeamSchema = new Schema<IApexTeam>({
   }],
   
   invitations: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    invited_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
+    invited_by: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     invited_at: { type: Date, default: Date.now },
     expires_at: { type: Date, required: true },
     status: { type: String, enum: ['pending', 'accepted', 'declined', 'expired'], default: 'pending' }
   }],
   
   join_requests: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     message: { type: String, maxlength: 300 },
     requested_at: { type: Date, default: Date.now },
     status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
-    reviewed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     reviewed_at: { type: Date }
   }],
   

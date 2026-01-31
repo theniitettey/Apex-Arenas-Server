@@ -117,7 +117,7 @@ const ApexGameSchema = new Schema<IApexGame>({
   is_featured: { type: Boolean, default: false },
   display_order: { type: Number, default: 0 },
   
-  added_by: { type: Schema.Types.ObjectId, ref: 'User' }
+  added_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

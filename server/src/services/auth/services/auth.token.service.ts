@@ -102,6 +102,7 @@ export class TokenService {
   async generateRefreshToken(
     user_id: string,
     device_info: DeviceInfo,
+    role: 'player' | 'organizer' | 'admin',
     revokeExisting: boolean = false
   ): Promise<string> {
     try {
@@ -109,8 +110,13 @@ export class TokenService {
       const token_hash = CryptoUtils.hashDeterministic(refreshToken);
       const family_id = CryptoUtils.generateCryptoString(32);
 
+      // Use different expiry times for admin vs user refresh tokens
+      const expiryString = role === 'admin' 
+        ? env.JWT_ADMIN_REFRESH_EXPIRES_IN 
+        : env.JWT_REFRESH_EXPIRES_IN;
+
       const expires_at = new Date();
-      expires_at.setSeconds(expires_at.getSeconds() + this.parseJWTExpiry(env.JWT_REFRESH_EXPIRES_IN));
+      expires_at.setSeconds(expires_at.getSeconds() + this.parseJWTExpiry(expiryString));
 
       if (revokeExisting) {
         await RefreshToken.updateMany(
@@ -136,16 +142,19 @@ export class TokenService {
         use_count: 0
       });
 
+      logger.info('Refresh token created', { 
+        user_id, 
+        role,
+        expires_at,
+        expiry_config: expiryString
+      });
+
       return refreshToken;
     } catch (error: any) {
       logger.error('Error generating refresh token:', error);
       throw new Error('REFRESH_TOKEN_GENERATION_FAILED');
     }
   }
-
-  // ============================================
-  // TOKEN PAIR GENERATION
-  // ============================================
 
   /**
    * Generate token pair for players and organizers
@@ -159,7 +168,7 @@ export class TokenService {
   ): Promise<TokenPair> {
     const [accessToken, refreshToken] = await Promise.all([
       this.generateUserAccessToken(user_id, email, role),
-      this.generateRefreshToken(user_id, device_info, revokeExisting)
+      this.generateRefreshToken(user_id, device_info, role, revokeExisting) // Pass role
     ]);
 
     return { accessToken, refreshToken };
@@ -176,11 +185,12 @@ export class TokenService {
   ): Promise<TokenPair> {
     const [accessToken, refreshToken] = await Promise.all([
       this.generateAdminAccessToken(user_id, email),
-      this.generateRefreshToken(user_id, device_info, revokeExisting)
+      this.generateRefreshToken(user_id, device_info, 'admin', revokeExisting) // Pass 'admin'
     ]);
 
     return { accessToken, refreshToken };
   }
+
 
   // ============================================
   // ACCESS TOKEN VERIFICATION
@@ -237,7 +247,10 @@ export class TokenService {
    */
   async verifyRefreshToken(token: string): Promise<TokenVerificationResult> {
     try {
+      console.log('1. Raw token received:', token.substring(0, 20) + '...');
+
       const token_hash = CryptoUtils.hashDeterministic(token);
+      console.log('2. Token hash computed:', token_hash.substring(0, 20) + '...');
 
       const storedToken = await RefreshToken.findOne({
         token_hash,
@@ -245,7 +258,24 @@ export class TokenService {
         expires_at: { $gt: new Date() }
       }).populate('user_id', 'email role');
 
+      console.log('3. Token found in DB:', storedToken ? 'YES' : 'NO');
+
       if (!storedToken) {
+
+        const anyToken = await RefreshToken.findOne({ token_hash });
+        console.log('4. Token exists but invalid:', anyToken ? 'YES' : 'NO');
+        if (anyToken) {
+          console.log('   - is_revoked:', anyToken.is_revoked);
+          console.log('   - expires_at:', anyToken.expires_at);
+          console.log('   - is_expired:', anyToken.expires_at < new Date());
+        }
+        
+        // Also check what tokens exist for debugging
+        const allTokens = await RefreshToken.find().limit(5);
+        console.log('5. Sample token hashes in DB:', allTokens.map(t => t.token_hash.substring(0, 20)));
+        
+
+
         logger.warn('Refresh token not found or invalid', {
           token_hash: token_hash.substring(0, 10) + '...'
         });

@@ -67,7 +67,7 @@ export interface IApexTransaction extends Document {
 
 
 const ApexTransactionSchema = new Schema<IApexTransaction>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   idempotency_key: { type: String, required: true, unique: true },
   
@@ -108,7 +108,7 @@ const ApexTransactionSchema = new Schema<IApexTransaction>({
   escrow: {
     is_escrowed: { type: Boolean, default: false },
     released_at: { type: Date },
-    released_to: { type: Schema.Types.ObjectId, ref: 'User' }
+    released_to: { type: Schema.Types.ObjectId, ref: 'ApexUser' }
   },
   
   retry: {

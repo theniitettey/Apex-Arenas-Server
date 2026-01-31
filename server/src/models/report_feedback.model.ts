@@ -85,7 +85,7 @@ export interface IApexReportFeedback extends Document {
 }
 
 const ApexReportFeedbackSchema = new Schema<IApexReportFeedback>({
-  reporter_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  reporter_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   type: { 
     type: String, 
@@ -127,11 +127,11 @@ const ApexReportFeedbackSchema = new Schema<IApexReportFeedback>({
     other_files: [{ type: String }]
   },
   
-  assigned_to: { type: Schema.Types.ObjectId, ref: 'User' },
+  assigned_to: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   admin_notes: { type: String, maxlength: 2000 },
   
   resolution: {
-    resolved_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    resolved_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     resolved_at: { type: Date },
     resolution_notes: { type: String, maxlength: 2000 },
     fix_version: { type: String },
@@ -166,7 +166,7 @@ const ApexReportFeedbackSchema = new Schema<IApexReportFeedback>({
   allow_contact: { type: Boolean, default: true },
   
   upvotes: { type: Number, default: 0 },
-  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   
   resolved_at: { type: Date },
   closed_at: { type: Date }

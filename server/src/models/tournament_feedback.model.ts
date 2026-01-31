@@ -42,7 +42,7 @@ export interface IApexTournamentFeedback extends Document {
 
 const ApexTournamentFeedbackSchema = new Schema<IApexTournamentFeedback>({
   tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
-  author_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  author_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   overall_rating: { type: Number, required: true, min: 1, max: 5 },
   organizer_rating: { type: Number, required: true, min: 1, max: 5 },

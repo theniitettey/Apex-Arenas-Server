@@ -33,12 +33,13 @@ export const env = cleanEnv(process.env, {
 
   // JWT & Security Configs
   JWT_ACCESS_SECRET: str(),
-  JWT_REFRESH_SECRET: str(),
-  JWT_ADMIN_ACCESS_SECRET: str(),
-  JWT_ADMIN_REFRESH_SECRET: str(),
   JWT_ACCESS_EXPIRES_IN: num({default: 900}),
-  JWT_ADMIN_ACCESS_EXPIRES_IN: num({default: 600}),
   JWT_REFRESH_EXPIRES_IN: str({ default: '7d' }),
+
+  JWT_ADMIN_ACCESS_SECRET: str(),
+  JWT_ADMIN_ACCESS_EXPIRES_IN: num({default: 600}),
+
+  JWT_ADMIN_REFRESH_EXPIRES_IN: str({ default: '1d' }),
   JWT_ISSUER_USERS: str({ default: 'apex_service' }),
   JWT_ISSUER_ADMIN: str({ default: 'apex_admin_service' }),
   INTERNAL_SERVICE_SECRET: str(),
@@ -140,11 +141,7 @@ export const env = cleanEnv(process.env, {
 // Custom Validation Logic (if needed)
 
 (() => {
-  if (env.JWT_ACCESS_SECRET.length < 32 || env.JWT_REFRESH_SECRET.length < 32) {
-     throw new Error('JWT secrets must be at least 32 characters long');
-    process.exit(1);
-  }
-
+  
   if (!env.MONGODB_URI.startsWith('mongodb://') && !env.MONGODB_URI.startsWith('mongodb+srv://')) {
      throw new Error('MONGODB_URI must start with "mongodb://" or "mongodb+srv://"');
     process.exit(1);
@@ -189,7 +186,7 @@ export const jwtOptions = {
 
   },
   refresh: {
-    secret: env.JWT_REFRESH_SECRET,
+  
     expiresIn: env.JWT_REFRESH_EXPIRES_IN,
     issuer_audience: env.JWT_ISSUER_USERS,
     issuer_admin: env.JWT_ISSUER_ADMIN,

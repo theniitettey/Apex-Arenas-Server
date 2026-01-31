@@ -124,7 +124,7 @@ const ApexMatchSchema = new Schema<IApexMatch>({
   bracket_position: { type: String, enum: ['upper', 'lower', 'grand_final', 'main'], default: 'main' },
   
   participants: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     team_id: { type: Schema.Types.ObjectId, ref: 'Team' },
     in_game_id: { type: String, required: true },
     seed_number: { type: Number },
@@ -169,33 +169,33 @@ const ApexMatchSchema = new Schema<IApexMatch>({
     duration_minutes: { type: Number }
   },
   
-  result_reported_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  result_reported_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   result_reported_at: { type: Date },
-  result_confirmed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  result_confirmed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   result_confirmed_at: { type: Date },
   
   proof: {
     screenshots: [{ type: String }],
     video_url: { type: String },
-    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     submitted_at: { type: Date }
   },
   
   dispute: {
     is_disputed: { type: Boolean, default: false },
-    disputed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    disputed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     dispute_reason: { type: String },
     disputed_at: { type: Date },
     evidence: [{ type: String }],
     resolved: { type: Boolean, default: false },
     resolution: { type: String },
     resolved_at: { type: Date },
-    resolved_by: { type: Schema.Types.ObjectId, ref: 'User' }
+    resolved_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' }
   },
   
   admin_override: {
     overridden: { type: Boolean, default: false },
-    overridden_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    overridden_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     overridden_at: { type: Date },
     reason: { type: String },
     original_winner_id: { type: Schema.Types.ObjectId }

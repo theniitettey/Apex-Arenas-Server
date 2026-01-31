@@ -176,7 +176,7 @@ export class SessionService {
 
       // 4. Generate new tokens (don't revoke existing yet)
       const accessToken = await tokenService.generateUserAccessToken(user_id, email, role);
-      const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, false);
+      const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, role, false);
 
       // 5. Revoke the old token after new one is created
       try {
@@ -282,7 +282,7 @@ export class SessionService {
 
       // 4. Generate new tokens
       const accessToken = await tokenService.generateAdminAccessToken(user_id, email);
-      const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, false);
+      const newRefreshToken = await tokenService.generateRefreshToken(user_id, device_info, role, false);
 
       // 5. Revoke the old token
       try {

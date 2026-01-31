@@ -44,7 +44,7 @@ export interface IApexCommunityPost extends Document {
 }
 
 const ApexCommunityPostSchema = new Schema<IApexCommunityPost>({
-  author_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  author_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   post_type: { 
     type: String, 
     enum: ['game_request', 'team_recruitment', 'tournament_feedback', 'strategy_guide', 'general_discussion', 'announcement'],
@@ -58,13 +58,13 @@ const ApexCommunityPostSchema = new Schema<IApexCommunityPost>({
     videos: [{ type: String }]
   },
   
-  game_id: { type: Schema.Types.ObjectId, ref: 'Game' },
-  tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament' },
+  game_id: { type: Schema.Types.ObjectId, ref: 'ApexGame' },
+  tournament_id: { type: Schema.Types.ObjectId, ref: 'ApexTournament' },
   
   upvotes: { type: Number, default: 0 },
-  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   downvotes: { type: Number, default: 0 },
-  downvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  downvoted_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   comment_count: { type: Number, default: 0 },
   views: { type: Number, default: 0 },
   
@@ -77,7 +77,7 @@ const ApexCommunityPostSchema = new Schema<IApexCommunityPost>({
   is_featured: { type: Boolean, default: false },
   tags: [{ type: String, maxlength: 30 }],
   
-  moderated_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  moderated_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   moderation_reason: { type: String, maxlength: 500 },
   moderated_at: { type: Date },
   

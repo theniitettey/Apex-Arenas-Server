@@ -48,7 +48,7 @@ export interface IApexTeamRecruitment extends Document {
 }
 
 const ApexTeamRecruitmentSchema = new Schema<IApexTeamRecruitment>({
-  posted_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  posted_by: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   posting_as: { 
     type: String, 
     enum: ['player_looking_for_team', 'team_looking_for_player'],
@@ -93,7 +93,7 @@ const ApexTeamRecruitmentSchema = new Schema<IApexTeamRecruitment>({
     enum: ['open', 'filled', 'closed', 'expired'],
     default: 'open' 
   },
-  applicants: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  applicants: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   applicant_count: { type: Number, default: 0 },
   
   views: { type: Number, default: 0 },

@@ -183,7 +183,7 @@ export interface IApexTournament extends Document {
 }
 
 const ApexTournamentSchema = new Schema<IApexTournament>({
-  organizer_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  organizer_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   escrow_account_id: { type: Schema.Types.ObjectId, ref: 'EscrowAccount' },
   
   title: { type: String, required: true, trim: true, maxlength: 100 },
@@ -286,12 +286,12 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
   },
   
   results: {
-    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     submitted_at: { type: Date },
     winners: [{
       position: { type: Number },
       in_game_id: { type: String },
-      user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+      user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
       verified: { type: Boolean, default: false }
     }],
     verification_status: { type: String, enum: ['pending', 'verified', 'disputed'], default: 'pending' },
@@ -314,7 +314,7 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
   
   cancellation: {
     cancelled: { type: Boolean, default: false },
-    cancelled_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    cancelled_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     cancelled_at: { type: Date },
     reason: { type: String },
     refunds_processed: { type: Boolean, default: false },

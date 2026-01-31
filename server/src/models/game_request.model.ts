@@ -51,7 +51,7 @@ export interface IApexGameRequest extends Document {
 }
 
 const ApexGameRequestSchema = new Schema<IApexGameRequest>({
-  requester_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  requester_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   game_name: { type: String, required: true, trim: true, maxlength: 100 },
   slug: { type: String, required: true, lowercase: true, trim: true },
@@ -69,7 +69,7 @@ const ApexGameRequestSchema = new Schema<IApexGameRequest>({
   estimated_players: { type: Number, min: 0 },
   
   upvotes: { type: Number, default: 0 },
-  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   
   status: { 
     type: String, 
@@ -80,7 +80,7 @@ const ApexGameRequestSchema = new Schema<IApexGameRequest>({
   duplicate_of: { type: Schema.Types.ObjectId },
   
   admin_review: {
-    reviewed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     reviewed_at: { type: Date },
     review_notes: { type: String, maxlength: 1000 },
     rejection_reason: { type: String, maxlength: 500 }

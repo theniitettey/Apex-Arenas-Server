@@ -5,13 +5,16 @@ import {
   authErrorHandler,
   registrationRateLimiter,
   otpRateLimiter,
-  apiRateLimiter
+  apiRateLimiter,
+  validateQuery
 } from '../middlewares';
 import {
   validateRequest,
   registerSchema,
   verifyEmailSchema,
-  requestOtpSchema
+  requestOtpSchema,
+  checkEmailAvailabilitySchema,
+  checkUsernameAvailabilitySchema
 } from '../middlewares/auth.validation.middleware';
 import { createLogger } from '../../../shared/utils/logger.utils';
 
@@ -75,6 +78,7 @@ router.post(
 router.get(
   '/check-email',
   apiRateLimiter,
+  validateQuery(checkEmailAvailabilitySchema),
   asyncHandler(registerController.checkEmailAvailability.bind(registerController))
 );
 
@@ -86,6 +90,7 @@ router.get(
 router.get(
   '/check-username',
   apiRateLimiter,
+  validateQuery(checkUsernameAvailabilitySchema),
   asyncHandler(registerController.checkUsernameAvailability.bind(registerController))
 );
 

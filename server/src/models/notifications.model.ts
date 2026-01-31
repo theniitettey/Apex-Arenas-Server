@@ -59,7 +59,7 @@ export interface IApexNotification extends Document {
 }
 
 const ApexNotificationSchema = new Schema<IApexNotification>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   type: { 
     type: String, 

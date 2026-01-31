@@ -187,6 +187,24 @@ export const verifyEmailSchema = z.object({
     .regex(/^\d+$/, 'OTP must contain only numbers')
 });
 
+// Check email availability
+export const checkEmailAvailabilitySchema = z.object({
+  email: z.string()
+    .min(1, 'Email is required')
+    .email('Invalid email format')
+    .toLowerCase()
+    .trim(),
+});
+
+export const checkUsernameAvailabilitySchema = z.object({
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be less than 30 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .toLowerCase()
+    .trim(),
+});
+
 // 2FA Schemas
 export const verify2FASchema = z.object({
   user_id: z.string()
@@ -359,7 +377,7 @@ export const validateQuery = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const validated_data = schema.parse(req.query);
-      req.query = validated_data as typeof req.query;
+      
       next();
     } catch (error) {
       if (error instanceof ZodError) {

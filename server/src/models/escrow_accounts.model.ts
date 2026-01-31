@@ -230,21 +230,21 @@ export interface IApexEscrowAccount extends Document {
 }
 
 const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
-  tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true, unique: true },
+  tournament_id: { type: Schema.Types.ObjectId, ref: 'ApexTournament', required: true, unique: true },
   
   organizer_deposit: {
-    deposited_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    deposited_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     gross_amount: { type: Number, default: 0 },
     platform_fee: { type: Number, default: 0 },
     net_prize_pool: { type: Number, default: 0 },
-    deposit_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    deposit_transaction_id: { type: Schema.Types.ObjectId, ref: 'ApexTransaction' },
     deposited_at: { type: Date },
     platform_fee_status: { type: String, enum: ['pending', 'deducted', 'waived'], default: 'pending' },
     platform_fee_deducted_at: { type: Date },
     cancelled: { type: Boolean, default: false },
     cancelled_at: { type: Date },
     refund_amount: { type: Number, default: 0 },
-    refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+    refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'ApexTransaction' },
     refunded_at: { type: Date }
   },
   
@@ -252,12 +252,12 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
     total_collected: { type: Number, default: 0 },
     total_players: { type: Number, default: 0 },
     payments: [{
-      user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+      user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
       in_game_id: { type: String, required: true },
       gross_amount: { type: Number, required: true },
       platform_fee: { type: Number, required: true },
       organizer_share: { type: Number, required: true },
-      payment_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction', required: true },
+      payment_transaction_id: { type: Schema.Types.ObjectId, ref: 'ApexTransaction', required: true },
       paid_at: { type: Date, required: true },
       platform_fee_status: { type: String, enum: ['pending', 'deducted', 'waived'], default: 'pending' },
       platform_fee_deducted_at: { type: Date },
@@ -266,7 +266,7 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
       cancelled_at: { type: Date },
       cancellation_type: { type: String, enum: ['player_early', 'organizer_cancelled', 'tournament_cancelled'] },
       refund_amount: { type: Number, default: 0 },
-      refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+      refund_transaction_id: { type: Schema.Types.ObjectId, ref: 'ApexTransaction' },
       refunded_at: { type: Date }
     }]
   },
@@ -277,16 +277,16 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
     from_players: { type: Number, default: 0 },
     fees_deducted: { type: Boolean, default: false },
     collected_at: { type: Date },
-    withdrawal_transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' }
+    withdrawal_transaction_id: { type: Schema.Types.ObjectId, ref: 'ApexTransaction' }
   },
   
   winner_submissions: {
-    submitted_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    submitted_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     submitted_at: { type: Date },
     winners: [{
       position: { type: Number, required: true },
       in_game_id: { type: String, required: true },
-      matched_user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+      matched_user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
       match_status: { type: String, enum: ['matched', 'not_found', 'not_registered'], default: 'not_found' },
       prize_percentage: { type: Number, required: true },
       prize_amount: { type: Number, required: true },
@@ -313,7 +313,7 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
   },
   
   refund_log: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     user_type: { type: String, enum: ['player', 'organizer'], required: true },
     reason: { type: String, enum: ['player_cancelled_early', 'organizer_cancelled_early', 'tournament_cancelled', 'system_refund'], required: true },
     original_amount: { type: Number, required: true },
@@ -343,7 +343,7 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
     balance: { type: Number, default: 0 },
     verified: { type: Boolean, default: false },
     verified_at: { type: Date },
-    verified_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    verified_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     discrepancy_notes: { type: String }
   },
   
@@ -364,7 +364,7 @@ const EscrowAccountSchema = new Schema<IApexEscrowAccount>({
   
   audit_log: [{
     action: { type: String, required: true },
-    performed_by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    performed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     performed_at: { type: Date, default: Date.now },
     details: { type: String },
     previous_status: { type: String },

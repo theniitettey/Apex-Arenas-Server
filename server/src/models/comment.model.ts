@@ -42,15 +42,15 @@ const ApexCommentSchema = new Schema<IApexComment>({
   },
   parent_id: { type: Schema.Types.ObjectId, required: true },
   
-  author_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  author_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   content: { type: String, required: true, maxlength: 2000 },
   
-  parent_comment_id: { type: Schema.Types.ObjectId, ref: 'Comment' },
+  parent_comment_id: { type: Schema.Types.ObjectId, ref: 'ApexComment' },
   depth: { type: Number, default: 0, max: 3 },
   reply_count: { type: Number, default: 0 },
   
   upvotes: { type: Number, default: 0 },
-  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  upvoted_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   
   status: { 
     type: String, 
@@ -58,7 +58,7 @@ const ApexCommentSchema = new Schema<IApexComment>({
     default: 'active' 
   },
   reported_count: { type: Number, default: 0 },
-  reported_by: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  reported_by: [{ type: Schema.Types.ObjectId, ref: 'ApexUser' }],
   
   edited: { type: Boolean, default: false },
   edited_at: { type: Date }

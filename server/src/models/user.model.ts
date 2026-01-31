@@ -409,7 +409,7 @@ const ApexUserSchema = new Schema<IApexUser>({
   },
   
   game_profiles: [{
-    game_id: { type: Schema.Types.ObjectId, ref: 'Game', required: true },
+    game_id: { type: Schema.Types.ObjectId, ref: 'ApexGame', required: true },
     in_game_id: { type: String, required: true },
     skill_level: { type: String, enum: ['beginner', 'intermediate', 'advanced', 'pro'], default: 'beginner' },
     rank: { type: String },
@@ -458,7 +458,7 @@ const ApexUserSchema = new Schema<IApexUser>({
   is_banned: { type: Boolean, default: false },
   banned_reason: { type: String },
   banned_until: { type: Date },
-  banned_by: { type: Schema.Types.ObjectId, ref: 'User' }
+  banned_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
@@ -475,7 +475,7 @@ ApexUserSchema.index({ is_active: 1 });
 
 
 const ApexOTPSchema = new Schema<IApexOTP>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   type: { 
     type: String, 
     enum: ['email_verification', 'password_reset', 'phone_verification', '2fa_login', 'withdrawal_confirmation'],
@@ -506,14 +506,14 @@ ApexOTPSchema.index({ user_id: 1, type: 1, used: 1 });
 
 
 const ApexRefreshTokenSchema = new Schema<IApexRefreshToken>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   token_hash: { type: String, required: true},
   family_id: { type: String, required: true },
   generation: { type: Number, default: 0 },
   expires_at: { type: Date, required: true },
   is_revoked: { type: Boolean, default: false },
   revoked_at: { type: Date },
-  revoked_by: { type: Schema.Types.ObjectId, ref: 'User' },
+  revoked_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   revoke_reason: { 
     type: String, 
     enum: ['logout', 'password_change', 'security_concern', 'admin_action', 'token_rotation', 'session_expired'] 
@@ -549,7 +549,7 @@ ApexRefreshTokenSchema.index({ user_id: 1, is_revoked: 1 });
 
 
 const ApexAuthLogSchema = new Schema<IApexAuthLog>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User' },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
   event_type: { 
     type: String, 
     enum: [
@@ -585,7 +585,7 @@ const ApexAuthLogSchema = new Schema<IApexAuthLog>({
     is_suspicious: { type: Boolean, default: false },
     risk_score: { type: Number, min: 0, max: 100 },
     risk_factors: [{ type: String }],
-    admin_id: { type: Schema.Types.Mixed, ref: 'User' },
+    admin_id: { type: Schema.Types.Mixed, ref: 'ApexUser' },
     admin_reason: { type: String }
   }
 }, {
@@ -603,7 +603,7 @@ ApexAuthLogSchema.index({ user_id: 1, success: 1, created_at: -1 });
 
 
 const ApexUserSecuritySchema = new Schema<IApexUserSecurity>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true},
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true},
   
   lockout: {
     is_locked: { type: Boolean, default: false },

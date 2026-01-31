@@ -69,7 +69,7 @@ export interface IApexRegistration extends Document {
 
 const ApexRegistrationSchema = new Schema<IApexRegistration>({
   tournament_id: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   team_id: { type: Schema.Types.ObjectId, ref: 'Team' },
   
   registration_type: { type: String, enum: ['solo', 'team'], required: true },
@@ -77,7 +77,7 @@ const ApexRegistrationSchema = new Schema<IApexRegistration>({
   in_game_id: { type: String, required: true },
   
   team_members: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     in_game_id: { type: String, required: true },
     role: { type: String, enum: ['captain', 'player', 'substitute'], default: 'player' },
     confirmed: { type: Boolean, default: false },
@@ -99,7 +99,7 @@ const ApexRegistrationSchema = new Schema<IApexRegistration>({
     amount: { type: Number, default: 0 },
     transaction_id: { type: Schema.Types.ObjectId, ref: 'Transaction' },
     processed_at: { type: Date },
-    processed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    processed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     denial_reason: { type: String }
   },
   
@@ -112,7 +112,7 @@ const ApexRegistrationSchema = new Schema<IApexRegistration>({
   check_in: {
     checked_in: { type: Boolean, default: false },
     checked_in_at: { type: Date },
-    checked_in_by: { type: Schema.Types.ObjectId, ref: 'User' }
+    checked_in_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' }
   },
   
   seed_number: { type: Number },

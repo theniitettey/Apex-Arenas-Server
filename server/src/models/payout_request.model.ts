@@ -89,7 +89,7 @@ export interface IApexPayoutRequest extends Document {
 }
 
 const ApexPayoutRequestSchema = new Schema<IApexPayoutRequest>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
   
   idempotency_key: { type: String, required: true, unique: true },
   
@@ -124,7 +124,7 @@ const ApexPayoutRequestSchema = new Schema<IApexPayoutRequest>({
   is_expired: { type: Boolean, default: false },
   
   admin_review: {
-    reviewed_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     reviewed_at: { type: Date },
     review_notes: { type: String },
     approved: { type: Boolean },
@@ -158,7 +158,7 @@ const ApexPayoutRequestSchema = new Schema<IApexPayoutRequest>({
   
   cancellation: {
     cancelled: { type: Boolean, default: false },
-    cancelled_by: { type: Schema.Types.ObjectId, ref: 'User' },
+    cancelled_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
     cancelled_at: { type: Date },
     reason: { type: String }
   },
