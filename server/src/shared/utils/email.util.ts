@@ -37,7 +37,10 @@ export type EmailTemplateType =
   // Admin Templates (support)
   | 'admin_setup_complete'
   | 'admin_2fa_required'
-  | 'admin_suspicious_alert';
+  | 'admin_suspicious_alert'
+  // Organizer Request Templates
+  | 'organizer_approved'
+  | 'organizer_rejected';
 
 export interface EmailOptions {
   to: string | string[];
@@ -176,8 +179,18 @@ const EMAIL_REGISTRY: Record<EmailTemplateType, TemplateConfig> = {
   },
   admin_suspicious_alert: {
     sender: 'support',
-    subject: '🚨 Security Alert - Apex Arenas Admin',
+    subject: 'Security Alert - Apex Arenas Admin',
     templatePath: 'admin/suspicious-alert.hbs'
+  },
+  organizer_approved: {
+    sender: 'support',
+    subject: 'Requested Organizer Role Approved',
+    templatePath: ''
+  },
+  organizer_rejected: {
+    sender: 'support',
+    subject: 'Requested Organizer Role Rejected',
+    templatePath: ''
   }
 };
 

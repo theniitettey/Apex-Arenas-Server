@@ -541,6 +541,107 @@ export class AdminController {
       return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
+
+  // ============================================
+  // ORGANIZER VERIFICATION MANAGEMENT
+  // ============================================
+
+  async listVerificationRequests(req: Request, res: Response) {
+    try {
+      const { status, page, limit, sort_order } = req.query;
+
+      const result = await adminService.listVerificationRequests({
+        status: status as any,
+        page: page ? parseInt(page as string) : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+        sort_order: sort_order as 'asc' | 'desc'
+      });
+
+      return sendSuccess(res, result);
+    } catch (error: any) {
+      logger.error('List verification requests error:', error);
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
+    }
+  }
+
+  async getVerificationRequestDetails(req: Request, res: Response) {
+    try {
+      const requestId = req.params.requestId as string;
+      const request = await adminService.getVerificationRequestDetails(requestId);
+
+      return sendSuccess(res, request);
+    } catch (error: any) {
+      logger.error('Get verification request details error:', error);
+
+      if (error.message === 'VERIFICATION_REQUEST_NOT_FOUND') {
+        return sendNotFound(res, 'VERIFICATION_REQUEST_NOT_FOUND');
+      }
+
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
+    }
+  }
+
+  async reviewVerificationRequest(req: Request, res: Response) {
+    try {
+      const requestId = req.params.requestId as string;
+      const { action, admin_notes, rejection_reasons } = req.body;
+      const admin_id = (req as any).user?.user_id;
+
+      if (!action || !['approve', 'reject', 'request_resubmission'].includes(action)) {
+        return sendError(res, AUTH_ERROR_CODES.VALIDATION_ERROR, undefined, 'Invalid action. Must be: approve, reject, or request_resubmission');
+      }
+
+      if (action !== 'approve' && (!rejection_reasons || !Array.isArray(rejection_reasons) || rejection_reasons.length === 0)) {
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Rejection reasons are required for reject/resubmission');
+      }
+
+      const result = await adminService.reviewVerificationRequest({
+        request_id: requestId,
+        action,
+        admin_id,
+        admin_notes,
+        rejection_reasons,
+        device_context: getAuditMetadata(req)
+      });
+
+      if (!result.success) {
+        if (result.error === 'VERIFICATION_REQUEST_NOT_FOUND') {
+          return sendNotFound(res, 'VERIFICATION_REQUEST_NOT_FOUND');
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
+      }
+
+      return sendSuccess(res, undefined, result.message);
+    } catch (error: any) {
+      logger.error('Review verification request error:', error);
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
+    }
+  }
+
+  async markVerificationUnderReview(req: Request, res: Response) {
+    try {
+      const requestId = req.params.requestId as string;
+      const admin_id = (req as any).user?.user_id;
+
+      const result = await adminService.markVerificationUnderReview(
+        requestId,
+        admin_id,
+        getAuditMetadata(req)
+      );
+
+      if (!result.success) {
+        if (result.error === 'VERIFICATION_REQUEST_NOT_FOUND') {
+          return sendNotFound(res, 'VERIFICATION_REQUEST_NOT_FOUND');
+        }
+        return sendError(res, result.error || AUTH_ERROR_CODES.INTERNAL_ERROR);
+      }
+
+      return sendSuccess(res, undefined, result.message);
+    } catch (error: any) {
+      logger.error('Mark verification under review error:', error);
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
+    }
+  }
 }
 
 export const adminController = new AdminController();

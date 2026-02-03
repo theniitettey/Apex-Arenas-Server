@@ -10,9 +10,11 @@ export { adminService, AdminService } from './auth.admin.service';
 // Re-export types
 export type { TokenPayload, TokenPair, TokenVerificationResult, DeviceInfo } from './auth.token.service';
 export type { SessionInfo, SessionValidationResult } from './auth.session.service';
-export type { CreateUserData, LoginCredentials, LoginResult, AdminLoginResult, UpdateProfileData, DeviceContext, Complete2FALoginResult } from './auth.user.service';
+export type { CreateUserData, LoginCredentials, LoginResult, AdminLoginResult, UpdateProfileData, Complete2FALoginResult } from './auth.user.service';
 export type { PasswordValidationResult } from './auth.password.service';
 export type { OTPGenerateOptions, OTPVerificationResult, OTPVerifyOptions } from './auth.otp.service';
 export type { AuditEventParams, AuditSearchFilters, SecurityStats } from './auth.audit.service';
 export type { TOTPSetupResult, TOTPVerifyResult, BackupCodesResult, TwoFactorStatus } from './auth.2fa.service';
 export type { UserListFilters, UserListResult, UserDetailsResult, BanUserParams, AdminActionResult, SystemStats } from './auth.admin.service';
+export type { OrganizerVerificationData, OrganizerVerificationResult } from './auth.user.service';
+export type { VerificationListFilters, VerificationListResult, ReviewVerificationParams } from './auth.admin.service';

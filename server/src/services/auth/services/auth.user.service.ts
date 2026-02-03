@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { User, IApexUser, UserSecurity, RefreshToken } from '../../../models/user.model';
+import { User, IApexUser, UserSecurity, RefreshToken, ApexMediaDocuments, OrganizerVerificationRequest } from '../../../models/user.model';
 import { PasswordService } from './auth.password.service';
 import { AuditService } from './auth.audit.service';
 import { sessionService } from './auth.session.service';
@@ -10,6 +10,7 @@ import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { DeviceContext, detectDeviceType } from '../../../shared/utils/request.utils';
 import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
+import { uploadToCloudinary, deleteFromCloudinary } from '../../../configs/cloudinary.config';
 
 const logger = createLogger('auth-user-service');
 
@@ -74,6 +75,38 @@ export interface Complete2FALoginResult {
   user?: IApexUser;
   access_token?: string;
   refresh_token?: string;
+  error?: string;
+  error_code?: string;
+}
+
+export interface OrganizerVerificationData {
+  business_info: {
+    business_name: string;
+    business_type: string;
+    registration_number?: string;
+    tax_id?: string;
+    address: string;
+    contact_person: string;
+  };
+  documents: {
+    id_front: Buffer;
+    id_back: Buffer;
+    selfie_with_id: Buffer;
+    business_registration?: Buffer;
+    utility_bill?: Buffer;
+  };
+  file_metadata: {
+    id_front: { mimetype: string; size: number };
+    id_back: { mimetype: string; size: number };
+    selfie_with_id: { mimetype: string; size: number };
+    business_registration?: { mimetype: string; size: number };
+    utility_bill?: { mimetype: string; size: number };
+  };
+}
+
+export interface OrganizerVerificationResult {
+  success: boolean;
+  request_id?: string;
   error?: string;
   error_code?: string;
 }
@@ -206,8 +239,9 @@ export class UserService {
   private async handleFailedLogin(
     user_id: string,
     credentials: LoginCredentials,
-    user_type: 'user' | 'admin'
+    user_type: 'player' | 'organizer' | 'admin'  // Fixed typo and added player
   ): Promise<void> {
+    // Treat both 'player' and 'organizer' as regular users
     const max_attempts = user_type === 'admin' 
       ? this.MAX_FAILED_ATTEMPTS_ADMIN 
       : this.MAX_FAILED_ATTEMPTS_USER;
@@ -383,6 +417,11 @@ export class UserService {
 
       // Validate role
       const role = userData.role || 'player';
+      if (!['player', 'organizer'].includes(role)) {
+        throw new Error(AUTH_ERROR_CODES.INVALID_ROLE);
+      }
+
+      
       if (userData.role === 'admin' as string) {
         await AuditService.logAuthEvent({
           event_type: 'registration_failed',
@@ -635,7 +674,7 @@ export class UserService {
       );
 
       if (!is_password_valid) {
-        await this.handleFailedLogin(user._id.toString(), credentials, 'user');
+        await this.handleFailedLogin(user._id.toString(), credentials, user.role as 'player' | 'organizer');
         return { 
           success: false, 
           error: 'Invalid email or password', 
@@ -1536,6 +1575,254 @@ export class UserService {
         error: 'Admin 2FA login failed', 
         error_code: AUTH_ERROR_CODES.ADMIN_2FA_LOGIN_FAILED 
       };
+    }
+  }
+
+  // ============================================
+  // ORGANIZER VERIFICATION
+  // ============================================
+
+  /**
+   * Request organizer verification - upload documents and create request
+   */
+  async requestOrganizerVerification(
+    user_id: string,
+    data: OrganizerVerificationData,
+    device_context: DeviceContext
+  ): Promise<OrganizerVerificationResult> {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    const uploaded_public_ids: string[] = []; // Track for cleanup on failure
+
+    try {
+      logger.info('Starting organizer verification request', { user_id });
+
+      // 1. Validate user exists and is a player
+      const user = await User.findById(user_id).session(session);
+      if (!user) {
+        return { success: false, error: 'User not found', error_code: AUTH_ERROR_CODES.USER_NOT_FOUND };
+      }
+
+      if (user.role !== 'player') {
+        return { success: false, error: 'Only players can request organizer verification', error_code: AUTH_ERROR_CODES.INVALID_ROLE };
+      }
+
+      if (user.verification_status.organizer_verified) {
+        return { success: false, error: 'Already verified as organizer', error_code: 'ALREADY_VERIFIED' };
+      }
+
+      // 2. Check for existing pending request
+      const existing_request = await OrganizerVerificationRequest.findOne({
+        user_id,
+        status: { $in: ['pending', 'under_review'] }
+      }).session(session);
+
+      if (existing_request) {
+        return { success: false, error: 'You already have a pending verification request', error_code: 'REQUEST_PENDING' };
+      }
+
+      // 3. Check resubmission limit
+      const previous_requests_count = await OrganizerVerificationRequest.countDocuments({
+        user_id,
+        status: 'rejected'
+      }).session(session);
+
+      if (previous_requests_count >= env.MAX_RESUBMISSION_COUNT) {
+        return { success: false, error: 'Maximum resubmission limit reached. Please contact support.', error_code: 'MAX_RESUBMISSIONS' };
+      }
+
+      // 4. Upload documents to Cloudinary
+      const folder = `apex-arenas/verification/${user_id}`;
+      const timestamp = Date.now();
+
+      const document_ids: Record<string, mongoose.Types.ObjectId> = {};
+
+      // Required documents
+      const required_docs = ['id_front', 'id_back', 'selfie_with_id'] as const;
+      for (const doc_type of required_docs) {
+        const buffer = data.documents[doc_type];
+        const metadata = data.file_metadata[doc_type];
+
+        if (!buffer || !metadata) {
+          throw new Error(`Missing required document: ${doc_type}`);
+        }
+
+        // Validate file size
+        if (metadata.size > env.MAX_DOCUMENT_SIZE_BYTES) {
+          throw new Error(`File ${doc_type} exceeds maximum size limit`);
+        }
+
+        // Upload to Cloudinary
+        const upload_result = await uploadToCloudinary(buffer, {
+          folder,
+          public_id: `${doc_type}_${timestamp}`,
+          allowed_formats: ['jpg', 'jpeg', 'png', 'pdf']
+        });
+
+        uploaded_public_ids.push(upload_result.public_id);
+
+        // Create document record
+        const [doc] = await ApexMediaDocuments.create([{
+          user_id,
+          document_type: doc_type,
+          cloudinary_public_id: upload_result.public_id,
+          cloudinary_url: upload_result.url,
+          secure_url: upload_result.secure_url,
+          file_size: upload_result.bytes,
+          format: upload_result.format,
+          width: upload_result.width,
+          height: upload_result.height,
+          status: 'pending',
+          submitted_at: new Date(),
+          metadata: {
+            ip_address: device_context.ip_address,
+            user_agent: device_context.user_agent,
+            upload_source: 'web'
+          }
+        }], { session });
+
+        document_ids[doc_type] = doc._id;
+      }
+
+      // Optional documents
+      const optional_docs = ['business_registration', 'utility_bill'] as const;
+      for (const doc_type of optional_docs) {
+        const buffer = data.documents[doc_type];
+        const metadata = data.file_metadata[doc_type];
+
+        if (buffer && metadata) {
+          if (metadata.size > env.MAX_DOCUMENT_SIZE_BYTES) {
+            throw new Error(`File ${doc_type} exceeds maximum size limit`);
+          }
+
+          const upload_result = await uploadToCloudinary(buffer, {
+            folder,
+            public_id: `${doc_type}_${timestamp}`,
+            allowed_formats: ['jpg', 'jpeg', 'png', 'pdf']
+          });
+
+          uploaded_public_ids.push(upload_result.public_id);
+
+          const [doc] = await ApexMediaDocuments.create([{
+            user_id,
+            document_type: doc_type,
+            cloudinary_public_id: upload_result.public_id,
+            cloudinary_url: upload_result.url,
+            secure_url: upload_result.secure_url,
+            file_size: upload_result.bytes,
+            format: upload_result.format,
+            width: upload_result.width,
+            height: upload_result.height,
+            status: 'pending',
+            submitted_at: new Date(),
+            metadata: {
+              ip_address: device_context.ip_address,
+              user_agent: device_context.user_agent,
+              upload_source: 'web'
+            }
+          }], { session });
+
+          document_ids[doc_type] = doc._id;
+        }
+      }
+
+      // 5. Create verification request
+      const [verification_request] = await OrganizerVerificationRequest.create([{
+        user_id,
+        business_info: data.business_info,
+        required_documents: {
+          id_front: document_ids.id_front,
+          id_back: document_ids.id_back,
+          selfie_with_id: document_ids.selfie_with_id,
+          business_registration: document_ids.business_registration,
+          utility_bill: document_ids.utility_bill
+        },
+        status: 'pending',
+        submitted_at: new Date(),
+        resubmission_count: previous_requests_count
+      }], { session });
+
+      // 6. Update document records with verification_request_id
+      await ApexMediaDocuments.updateMany(
+        { _id: { $in: Object.values(document_ids) } },
+        { verification_request_id: verification_request._id },
+        { session }
+      );
+
+      // 7. Commit transaction
+      await session.commitTransaction();
+
+      // 8. Log audit event
+      await AuditService.logAuthEvent({
+        user_id,
+        event_type: 'registration_completed',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
+          request_type: 'organizer_verification',
+          request_id: verification_request._id.toString()
+        }
+      });
+
+      logger.info('Organizer verification request created', {
+        user_id,
+        request_id: verification_request._id
+      });
+
+      return {
+        success: true,
+        request_id: verification_request._id.toString()
+      };
+
+    } catch (error: any) {
+      await session.abortTransaction();
+
+      // Cleanup uploaded files on failure
+      for (const public_id of uploaded_public_ids) {
+        await deleteFromCloudinary(public_id).catch(err => 
+          logger.warn('Failed to cleanup Cloudinary file', { public_id, error: err.message })
+        );
+      }
+
+      logger.error('Error creating organizer verification request:', error);
+      return {
+        success: false,
+        error: error.message || 'Verification request failed',
+        error_code: 'VERIFICATION_REQUEST_FAILED'
+      };
+    } finally {
+      session.endSession();
+    }
+  }
+
+  /**
+   * Get user's verification request status
+   */
+  async getVerificationStatus(user_id: string): Promise<any> {
+    try {
+      const request = await OrganizerVerificationRequest.findOne({ user_id })
+        .sort({ created_at: -1 })
+        .populate('required_documents.id_front required_documents.id_back required_documents.selfie_with_id')
+        .lean();
+
+      if (!request) {
+        return { has_request: false };
+      }
+
+      return {
+        has_request: true,
+        request_id: request._id,
+        status: request.status,
+        submitted_at: request.submitted_at,
+        reviewed_at: request.reviewed_at,
+        rejection_reasons: request.rejection_reasons,
+        resubmission_count: request.resubmission_count
+      };
+    } catch (error: any) {
+      logger.error('Error getting verification status:', error);
+      throw error;
     }
   }
 }

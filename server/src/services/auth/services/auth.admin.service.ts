@@ -1,9 +1,8 @@
-import { User, IApexUser, UserSecurity, AuthLog, RefreshToken } from '../../../models/user.model';
+import { User, IApexUser, UserSecurity, AuthLog, RefreshToken, ApexMediaDocuments, OrganizerVerificationRequest } from '../../../models/user.model';
 import { AuditService } from './auth.audit.service';
 import { tokenService } from './auth.token.service';
 import { otpService } from './auth.otp.service';
 import { twoFactorService } from './auth.2fa.service';
-import { PasswordService } from './auth.password.service';
 import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { emailService } from '../../../shared/utils/email.util';
@@ -82,6 +81,35 @@ export interface SystemStats {
     uptime: number;
     memory: NodeJS.MemoryUsage;
     timestamp: Date;
+  };
+}
+
+export interface VerificationListFilters {
+  status?: 'pending' | 'under_review' | 'approved' | 'rejected' | 'needs_resubmission';
+  page?: number;
+  limit?: number;
+  sort_order?: 'asc' | 'desc';
+}
+
+export interface VerificationListResult {
+  requests: any[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    total_pages: number;
+  };
+}
+
+export interface ReviewVerificationParams {
+  request_id: string;
+  action: 'approve' | 'reject' | 'request_resubmission'| 'organizer_approve' | 'organizer_rejected';
+  admin_id: string;
+  admin_notes?: string;
+  rejection_reasons?: string[];
+  device_context: {
+    ip_address: string;
+    user_agent: string;
   };
 }
 
@@ -903,6 +931,218 @@ export class AdminService {
     } catch (error: any) {
       logger.error('Error getting user audit trail:', error);
       throw new Error('AUDIT_TRAIL_FETCH_FAILED');
+    }
+  }
+
+  // ============================================
+  // ORGANIZER VERIFICATION MANAGEMENT
+  // ============================================
+
+  /**
+   * List organizer verification requests
+   */
+  async listVerificationRequests(filters: VerificationListFilters): Promise<VerificationListResult> {
+    try {
+      const page = filters.page || 1;
+      const limit = Math.min(filters.limit || 20, 50);
+      const skip = (page - 1) * limit;
+
+      const query: any = {};
+      if (filters.status) {
+        query.status = filters.status;
+      }
+
+      const sort_order = filters.sort_order === 'asc' ? 1 : -1;
+
+      const [requests, total] = await Promise.all([
+        OrganizerVerificationRequest.find(query)
+          .populate('user_id', 'email username profile.first_name profile.last_name')
+          .populate('required_documents.id_front required_documents.id_back required_documents.selfie_with_id required_documents.business_registration required_documents.utility_bill')
+          .populate('reviewed_by', 'email username')
+          .sort({ submitted_at: sort_order })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        OrganizerVerificationRequest.countDocuments(query)
+      ]);
+
+      return {
+        requests,
+        pagination: {
+          page,
+          limit,
+          total,
+          total_pages: Math.ceil(total / limit)
+        }
+      };
+    } catch (error: any) {
+      logger.error('Error listing verification requests:', error);
+      throw new Error('VERIFICATION_LIST_FAILED');
+    }
+  }
+
+  /**
+   * Get single verification request details
+   */
+  async getVerificationRequestDetails(request_id: string): Promise<any> {
+    try {
+      const request = await OrganizerVerificationRequest.findById(request_id)
+        .populate('user_id', 'email username profile.first_name profile.last_name profile.phone_number created_at')
+        .populate('required_documents.id_front required_documents.id_back required_documents.selfie_with_id required_documents.business_registration required_documents.utility_bill')
+        .populate('reviewed_by', 'email username')
+        .lean();
+
+      if (!request) {
+        throw new Error('VERIFICATION_REQUEST_NOT_FOUND');
+      }
+
+      return request;
+    } catch (error: any) {
+      logger.error('Error getting verification request details:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Review organizer verification request (approve/reject)
+   */
+  async reviewVerificationRequest(params: ReviewVerificationParams): Promise<AdminActionResult> {
+    try {
+      const { request_id, action, admin_id, admin_notes, rejection_reasons, device_context } = params;
+
+      const request = await OrganizerVerificationRequest.findById(request_id);
+      if (!request) {
+        return { success: false, error: 'VERIFICATION_REQUEST_NOT_FOUND' };
+      }
+
+      if (!['pending', 'under_review'].includes(request.status)) {
+        return { success: false, error: 'REQUEST_ALREADY_PROCESSED' };
+      }
+
+      const user = await User.findById(request.user_id);
+      if (!user) {
+        return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND };
+      }
+
+      // Update request status
+      request.reviewed_by = admin_id as any;
+      request.reviewed_at = new Date();
+      request.admin_notes = admin_notes;
+
+      let document_status: 'approved' | 'rejected' | 'pending' = 'pending';
+
+      switch (action) {
+        case 'approve':
+          request.status = 'approved';
+          document_status = 'approved';
+
+          // Update user's role and verification status
+          user.role = 'organizer';
+          user.verification_status.organizer_verified = true;
+          user.verification_status.verified_at = new Date();
+          await user.save();
+
+          logger.info('Organizer verification approved', { user_id: user._id, request_id });
+          break;
+
+        case 'reject':
+          request.status = 'rejected';
+          request.rejection_reasons = rejection_reasons || ['Application rejected'];
+          document_status = 'rejected';
+
+          logger.info('Organizer verification rejected', { user_id: user._id, request_id });
+          break;
+
+        case 'request_resubmission':
+          request.status = 'needs_resubmission';
+          request.rejection_reasons = rejection_reasons || ['Additional documents required'];
+
+          logger.info('Organizer verification needs resubmission', { user_id: user._id, request_id });
+          break;
+
+        default:
+          return { success: false, error: 'INVALID_ACTION' };
+      }
+
+      await request.save();
+
+      // Update document statuses
+      if (document_status !== 'pending') {
+        await ApexMediaDocuments.updateMany(
+          { verification_request_id: request._id },
+          { 
+            status: document_status,
+            reviewed_at: new Date(),
+            reviewed_by: admin_id,
+            rejection_reason: action === 'reject' ? rejection_reasons?.join(', ') : undefined
+          }
+        );
+      }
+
+      // Log admin action
+      await AuditService.logAuthEvent({
+        user_id: request.user_id.toString(),
+        event_type: 'account_reactivated',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
+          admin_id,
+          admin_reason: `Organizer verification ${action}: ${admin_notes || 'No notes'}`,
+          request_id
+        }
+      });
+
+      // Send notification email to user
+      await emailService.sendEmail({
+        to: user.email,
+        template: action === 'approve' ? 'organizer_approved' : 'organizer_rejected',
+        data: {
+          user_name: user.profile?.first_name || 'User',
+          status: action,
+          rejection_reasons: rejection_reasons,
+          admin_notes: admin_notes
+        }
+      }).catch(err => logger.warn('Failed to send verification email', { error: err.message }));
+
+      return {
+        success: true,
+        message: `Verification request ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'marked for resubmission'}`
+      };
+    } catch (error: any) {
+      logger.error('Error reviewing verification request:', error);
+      return { success: false, error: 'REVIEW_FAILED' };
+    }
+  }
+
+  /**
+   * Mark request as under review
+   */
+  async markVerificationUnderReview(
+    request_id: string,
+    admin_id: string,
+    device_context: { ip_address: string; user_agent: string }
+  ): Promise<AdminActionResult> {
+    try {
+      const request = await OrganizerVerificationRequest.findById(request_id);
+      if (!request) {
+        return { success: false, error: 'VERIFICATION_REQUEST_NOT_FOUND' };
+      }
+
+      if (request.status !== 'pending') {
+        return { success: false, error: 'REQUEST_NOT_PENDING' };
+      }
+
+      request.status = 'under_review';
+      request.reviewed_by = admin_id as any;
+      await request.save();
+
+      logger.info('Verification request marked under review', { request_id, admin_id });
+
+      return { success: true, message: 'Request marked as under review' };
+    } catch (error: any) {
+      logger.error('Error marking verification under review:', error);
+      return { success: false, error: 'UPDATE_FAILED' };
     }
   }
 }

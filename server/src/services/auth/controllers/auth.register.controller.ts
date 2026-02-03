@@ -51,13 +51,19 @@ export class RegisterController {
         first_name: user.profile.first_name,
         last_name: user.profile.last_name,
         role: user.role,
-        created_at: user.created_at
+        created_at: user.created_at,
+        requires_organizer_verification: user.role === 'organizer' && !user.verification_status.organizer_verified
+
       };
+
+      const message = user.role === 'organizer'
+        ? 'Registration successful. Please check your email for verification. As an organizer, you will need to submit ID verification to access all features.'
+        : 'Registration successful. Please check your email for verification code.';
 
       return sendCreated(res, {
         user: user_data,
         requires_verification: true
-      }, 'Registration successful. Please check your email for verification code.');
+      }, message);
     } catch (error: any) {
       logger.error('Registration error:', error);
 

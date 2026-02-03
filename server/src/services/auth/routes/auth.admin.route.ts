@@ -12,6 +12,7 @@ import {
   asyncHandler
 } from '../middlewares';
 import { createLogger } from '../../../shared/utils/logger.utils';
+import { adminService } from '../services';
 
 const logger = createLogger('auth-admin-routes');
 
@@ -43,6 +44,13 @@ const allowFirstAdminSetup = async (req: Request, res: Response, next: NextFunct
     }
 
     logger.info('First admin setup allowed - no existing admins');
+    
+    const { email } = req.body;
+    if (!adminService.isAdminEmail(email)) {
+      logger.warn('Unauthorized bootstrap attempt', { email });
+      return res.status(403).json({ error: 'Email not authorized' });
+    }
+    
     next();
   } catch (error:any) {
     logger.error('Error checking admin count:', error);
@@ -178,6 +186,38 @@ router.post(
   '/users/:userId/force-password-reset',
   logAdminAction('force_password_reset'),
   asyncHandler(adminController.forcePasswordReset.bind(adminController))
+);
+
+// ============================================
+// ORGANIZER VERIFICATION MANAGEMENT
+// ============================================
+
+// List verification requests
+router.get(
+  '/verifications',
+  logAdminAction('list_verifications'),
+  asyncHandler(adminController.listVerificationRequests.bind(adminController))
+);
+
+// Get verification request details
+router.get(
+  '/verifications/:requestId',
+  logAdminAction('view_verification'),
+  asyncHandler(adminController.getVerificationRequestDetails.bind(adminController))
+);
+
+// Mark verification as under review
+router.post(
+  '/verifications/:requestId/review-start',
+  logAdminAction('start_verification_review'),
+  asyncHandler(adminController.markVerificationUnderReview.bind(adminController))
+);
+
+// Review verification request (approve/reject)
+router.post(
+  '/verifications/:requestId/review',
+  logAdminAction('review_verification'),
+  asyncHandler(adminController.reviewVerificationRequest.bind(adminController))
 );
 
 // ============================================

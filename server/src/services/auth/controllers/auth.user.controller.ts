@@ -127,6 +127,91 @@ export class UserController {
       return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
     }
   }
+
+  // ============================================
+  // ORGANIZER VERIFICATION
+  // ============================================
+
+  async requestOrganizerVerification(req: AuthRequest, res: Response) {
+    try {
+      const user_id = req.user?.user_id;
+      const device_context = extractDeviceContext(req);
+
+      if (!user_id) {
+        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
+      }
+
+      const { business_name, business_type, registration_number, tax_id, address, contact_person } = req.body;
+
+      // Validate required fields
+      if (!business_name || !business_type || !address || !contact_person) {
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Business name, type, address, and contact person are required');
+      }
+
+      // Get uploaded files from multer
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+      if (!files?.id_front?.[0] || !files?.id_back?.[0] || !files?.selfie_with_id?.[0]) {
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'ID front, ID back, and selfie with ID are required');
+      }
+
+      const verification_data = {
+        business_info: {
+          business_name,
+          business_type,
+          registration_number,
+          tax_id,
+          address,
+          contact_person
+        },
+        documents: {
+          id_front: files.id_front[0].buffer,
+          id_back: files.id_back[0].buffer,
+          selfie_with_id: files.selfie_with_id[0].buffer,
+          business_registration: files.business_registration?.[0]?.buffer,
+          utility_bill: files.utility_bill?.[0]?.buffer
+        },
+        file_metadata: {
+          id_front: { mimetype: files.id_front[0].mimetype, size: files.id_front[0].size },
+          id_back: { mimetype: files.id_back[0].mimetype, size: files.id_back[0].size },
+          selfie_with_id: { mimetype: files.selfie_with_id[0].mimetype, size: files.selfie_with_id[0].size },
+          business_registration: files.business_registration?.[0] ? { mimetype: files.business_registration[0].mimetype, size: files.business_registration[0].size } : undefined,
+          utility_bill: files.utility_bill?.[0] ? { mimetype: files.utility_bill[0].mimetype, size: files.utility_bill[0].size } : undefined
+        }
+      };
+
+      const result = await userService.requestOrganizerVerification(user_id, verification_data, device_context);
+
+      if (!result.success) {
+        return sendError(res, result.error_code || AUTH_ERROR_CODES.INTERNAL_ERROR, undefined, result.error);
+      }
+
+      return sendSuccess(res, {
+        request_id: result.request_id
+      }, 'Verification request submitted successfully. You will be notified once reviewed.');
+
+    } catch (error: any) {
+      logger.error('Request organizer verification error:', error);
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
+    }
+  }
+
+  async getVerificationStatus(req: AuthRequest, res: Response) {
+    try {
+      const user_id = req.user?.user_id;
+
+      if (!user_id) {
+        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
+      }
+
+      const status = await userService.getVerificationStatus(user_id);
+      return sendSuccess(res, status);
+
+    } catch (error: any) {
+      logger.error('Get verification status error:', error);
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
+    }
+  }
 }
 
 export const userController = new UserController();

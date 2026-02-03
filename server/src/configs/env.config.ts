@@ -12,6 +12,15 @@ export const env = cleanEnv(process.env, {
   SERVICE_NAME: str({default: "APEX_API_SERVICE"}),
   SERVICE_VERSION: str({default: "1.0.0"}),
 
+  // Cloudinary
+  CLOUDINARY_CLOUD_NAME: str({ default: '' }),
+  CLOUDINARY_API_KEY: str({ default: '' }),
+  CLOUDINARY_API_SECRET: str({ default: '' }),
+  
+  // Verification settings - use num() validators
+  MAX_DOCUMENT_SIZE_BYTES: num({ default: 5242880 }), // 5MB default
+  MAX_RESUBMISSION_COUNT: num({ default: 3 }),
+
   // MongoDB Configs
   MONGODB_URI: str(),
   MONGODB_DB_NAME: str({ default: 'auth_service' }),
@@ -133,7 +142,7 @@ export const env = cleanEnv(process.env, {
   EMAIL_FROM_SUPPORT: str({ default: 'support@apexarenas.com' }),
   EMAIL_ENABLED: bool({ default: true }),
   EMAIL_REPLY_TO: str({ default: 'support@apexarenas.com' }),
-  
+
 });
 
 

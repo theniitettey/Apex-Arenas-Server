@@ -385,6 +385,81 @@ export interface IApexRateLimit {
   timestamps?: Date[];
 }
 
+export interface IApexMediaDocuments extends Document {
+  _id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
+  
+  document_type: 'id_front' | 'id_back' | 'selfie_with_id' | 'business_registration' | 'utility_bill' | 'tournament_screenshot' | 'profile_avatar';
+  
+  // Cloudinary details
+  cloudinary_public_id: string;
+  cloudinary_url: string;
+  secure_url: string;
+  
+  // File metadata  
+  file_size: number;
+  format: string; // jpg, png, pdf
+  width?: number;
+  height?: number;
+  
+  // Verification workflow
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  submitted_at: Date;
+  reviewed_at?: Date;
+  reviewed_by?: mongoose.Types.ObjectId; // admin
+  rejection_reason?: string;
+  
+  // Context
+  verification_request_id?: mongoose.Types.ObjectId; // links to verification requests
+  metadata: {
+    ip_address: string;
+    user_agent: string;
+    upload_source: 'web' | 'mobile_app';
+  };
+  
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface IOrganizerVerificationRequest extends Document {
+  _id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
+  
+  // Business details
+  business_info: {
+    business_name: string;
+    business_type: string;
+    registration_number?: string;
+    tax_id?: string;
+    address: string;
+    contact_person: string;
+  };
+  
+  // Required documents (references to Document schema)
+  required_documents: {
+    id_front: mongoose.Types.ObjectId;
+    id_back: mongoose.Types.ObjectId;  
+    selfie_with_id: mongoose.Types.ObjectId;
+    business_registration?: mongoose.Types.ObjectId;
+    utility_bill?: mongoose.Types.ObjectId;
+  };
+  
+  status: 'pending' | 'under_review' | 'approved' | 'rejected' | 'needs_resubmission';
+  submitted_at: Date;
+  
+  // Admin review
+  reviewed_by?: mongoose.Types.ObjectId;
+  reviewed_at?: Date;
+  admin_notes?: string;
+  rejection_reasons?: string[];
+  
+  // Resubmission tracking
+  resubmission_count: number;
+  previous_request_id?: mongoose.Types.ObjectId;
+  
+  created_at: Date;
+  updated_at: Date;
+}
 
 const ApexUserSchema = new Schema<IApexUser>({
   email: { type: String, required: true, lowercase: true, trim: true },
@@ -719,9 +794,112 @@ ApexUserSecuritySchema.index({ 'two_factor.is_enabled': 1 });
 ApexUserSecuritySchema.index({ 'risk.current_risk_level': 1 });
 ApexUserSecuritySchema.index({ 'trusted_devices.device_id': 1 });
 
+const ApexMediaDocumentsSchema = new Schema<IApexMediaDocuments>({
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
+  document_type: { 
+    type: String, 
+    enum: ['id_front', 'id_back', 'selfie_with_id', 'business_registration', 'utility_bill', 'tournament_screenshot', 'profile_avatar'],
+    required: true 
+  },
+  
+  cloudinary_public_id: { type: String, required: true },
+  cloudinary_url: { type: String, required: true },
+  secure_url: { type: String, required: true },
+  
+  file_size: { type: Number, required: true },
+  format: { type: String, required: true },
+  width: { type: Number },
+  height: { type: Number },
+  
+  status: { 
+    type: String, 
+    enum: ['pending', 'approved', 'rejected', 'expired'], 
+    default: 'pending' 
+  },
+  submitted_at: { type: Date, default: Date.now },
+  reviewed_at: { type: Date },
+  reviewed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
+  rejection_reason: { type: String },
+  
+  verification_request_id: { type: Schema.Types.ObjectId, ref: 'ApexOrganizerVerificationRequest' },
+  metadata: {
+    ip_address: { type: String, required: true },
+    user_agent: { type: String, required: true },
+    upload_source: { type: String, enum: ['web', 'mobile_app'], default: 'web' }
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Document Indexes
+ApexMediaDocumentsSchema.index({ user_id: 1 });
+ApexMediaDocumentsSchema.index({ document_type: 1 });
+ApexMediaDocumentsSchema.index({ status: 1 });
+ApexMediaDocumentsSchema.index({ submitted_at: -1 });
+ApexMediaDocumentsSchema.index({ verification_request_id: 1 });
+ApexMediaDocumentsSchema.index({ user_id: 1, document_type: 1 });
+
+const ApexOrganizerVerificationRequestSchema = new Schema<IOrganizerVerificationRequest>({
+  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
+  
+  business_info: {
+    business_name: { type: String, required: true },
+    business_type: { type: String, required: true },
+    registration_number: { type: String },
+    tax_id: { type: String },
+    address: { type: String, required: true },
+    contact_person: { type: String, required: true }
+  },
+  
+  required_documents: {
+    id_front: { type: Schema.Types.ObjectId, ref: 'ApexDocument', required: true },
+    id_back: { type: Schema.Types.ObjectId, ref: 'ApexDocument', required: true },
+    selfie_with_id: { type: Schema.Types.ObjectId, ref: 'ApexDocument', required: true },
+    business_registration: { type: Schema.Types.ObjectId, ref: 'ApexDocument' },
+    utility_bill: { type: Schema.Types.ObjectId, ref: 'ApexDocument' }
+  },
+  
+  status: { 
+    type: String, 
+    enum: ['pending', 'under_review', 'approved', 'rejected', 'needs_resubmission'], 
+    default: 'pending' 
+  },
+  submitted_at: { type: Date, default: Date.now },
+  
+  reviewed_by: { type: Schema.Types.ObjectId, ref: 'ApexUser' },
+  reviewed_at: { type: Date },
+  admin_notes: { type: String },
+  rejection_reasons: [{ type: String }],
+  
+  resubmission_count: { type: Number, default: 0 },
+  previous_request_id: { type: Schema.Types.ObjectId, ref: 'ApexOrganizerVerificationRequest' }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// OrganizerVerificationRequest Indexes
+ApexOrganizerVerificationRequestSchema.index({ user_id: 1 });
+ApexOrganizerVerificationRequestSchema.index({ status: 1 });
+ApexOrganizerVerificationRequestSchema.index({ submitted_at: -1 });
+ApexOrganizerVerificationRequestSchema.index({ reviewed_by: 1 });
+ApexOrganizerVerificationRequestSchema.index({ user_id: 1, status: 1 });
+
 
 export const User = mongoose.model<IApexUser>('ApexUser', ApexUserSchema);
 export const OTP = mongoose.model<IApexOTP>('ApexOTP', ApexOTPSchema);
 export const RefreshToken = mongoose.model<IApexRefreshToken>('ApexRefreshToken', ApexRefreshTokenSchema);
 export const AuthLog = mongoose.model<IApexAuthLog>('ApexAuthLog', ApexAuthLogSchema);
 export const UserSecurity = mongoose.model<IApexUserSecurity>('ApexUserSecurity', ApexUserSecuritySchema);
+export const ApexMediaDocuments = mongoose.model<IApexMediaDocuments>('ApexMediaDocuments', ApexMediaDocumentsSchema);
+export const OrganizerVerificationRequest = mongoose.model<IOrganizerVerificationRequest>('ApexOrganizerVerificationRequest', ApexOrganizerVerificationRequestSchema);
+
+
+
+
+
+
+
+
+
+
+

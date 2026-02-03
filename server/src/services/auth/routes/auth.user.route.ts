@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { userController } from '../controllers/auth.user.controller';
 import {
   userAuthMiddleware,
@@ -12,6 +13,23 @@ import {
 } from '../middlewares/auth.validation.middleware';
 
 const router: Router = Router();
+
+// Multer config for file uploads (memory storage for Cloudinary)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 5
+  },
+  fileFilter: (req, file, cb) => {
+    const allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+    if (allowed_types.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPG, PNG, and PDF are allowed.'));
+    }
+  }
+});
 
 // All routes require authentication
 router.use(userAuthMiddleware);
@@ -43,6 +61,32 @@ router.post(
   '/deactivate',
   apiRateLimiter,
   asyncHandler(userController.deactivateAccount.bind(userController))
+);
+
+/**
+ * POST /auth/user/verification/request
+ * Request organizer verification with document uploads
+ */
+router.post(
+  '/verification/request',
+  apiRateLimiter,
+  upload.fields([
+    { name: 'id_front', maxCount: 1 },
+    { name: 'id_back', maxCount: 1 },
+    { name: 'selfie_with_id', maxCount: 1 },
+    { name: 'business_registration', maxCount: 1 },
+    { name: 'utility_bill', maxCount: 1 }
+  ]),
+  asyncHandler(userController.requestOrganizerVerification.bind(userController))
+);
+
+/**
+ * GET /auth/user/verification/status
+ * Get current verification request status
+ */
+router.get(
+  '/verification/status',
+  asyncHandler(userController.getVerificationStatus.bind(userController))
 );
 
 router.use(authErrorHandler);
