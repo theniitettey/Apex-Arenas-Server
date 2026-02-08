@@ -89,6 +89,25 @@ router.get(
   asyncHandler(userController.getVerificationStatus.bind(userController))
 );
 
+/**
+ * POST /auth/user/add-password
+ * Add password to Google-only account
+ */
+router.post(
+  '/add-password',
+  apiRateLimiter,
+  asyncHandler(userController.addPassword.bind(userController))
+);
+
+/**
+ * GET /auth/user/auth-methods
+ * Get user's available authentication methods
+ */
+router.get(
+  '/auth-methods',
+  asyncHandler(userController.getAuthMethods.bind(userController))
+);
+
 router.use(authErrorHandler);
 
 export default router;

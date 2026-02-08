@@ -5,8 +5,14 @@ export interface IApexUser extends Document {
   _id: mongoose.Types.ObjectId;
   email: string; // unique, required
   username: string; // unique, required
-  password_hash: string; // hashed password
+  password_hash?: string; // hashed password
   role: string; // enum: ['player', 'organizer', 'admin']
+  auth_providers: Array<{
+    provider: 'local' | 'google';
+    provider_user_id: string;
+    linked_at: Date;
+    is_primary: boolean;
+  }>;
   profile: {
     first_name: string;
     last_name: string;
@@ -63,6 +69,8 @@ export interface IApexUser extends Document {
   
   verification_status: {
     email_verified: boolean;
+    email_verified_via?: 'otp' | 'google' | 'admin';
+    email_verified_at: Date;
     phone_verified: boolean;
     identity_verified: boolean;
     organizer_verified: boolean; // verified organizers can create paid tournaments
@@ -464,9 +472,16 @@ export interface IOrganizerVerificationRequest extends Document {
 const ApexUserSchema = new Schema<IApexUser>({
   email: { type: String, required: true, lowercase: true, trim: true },
   username: { type: String, required: true, trim: true },
-  password_hash: { type: String, required: true },
+  password_hash: { type: String},
   role: { type: String, enum: ['player', 'organizer', 'admin'], default: 'player' },
   
+  auth_providers: [{
+    provider: {type: String, enum: ['local', 'google'], require: true},
+    provider_user_id: {type: String, required: true},
+    linked_at: {type: Date, default: Date.now},
+    is_primary: {type: Boolean, default: false }
+  }],
+
   profile: {
     first_name: { type: String, default: '' },
     last_name: { type: String, default: '' },
@@ -521,6 +536,8 @@ const ApexUserSchema = new Schema<IApexUser>({
   
   verification_status: {
     email_verified: { type: Boolean, default: false },
+    email_verified_via: {type:String, enum: ['otp', 'google', 'admin']},
+    email_verified_at: {type: Date},
     phone_verified: { type: Boolean, default: false },
     identity_verified: { type: Boolean, default: false },
     organizer_verified: { type: Boolean, default: false },

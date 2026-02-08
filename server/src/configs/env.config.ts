@@ -126,6 +126,9 @@ export const env = cleanEnv(process.env, {
   // Encryption (for TOTP secrets)
   ENCRYPTION_KEY: str({ default: '' }),
 
+  // Add these to your env object/interface
+  GOOGLE_CLIENT_ID: str({ default: '' }),
+  GOOGLE_CLIENT_SECRET: str({ default: '' }),
 
   // Idempotency
   IDEMPOTENCY_TTL: num({ default: 3600 }),

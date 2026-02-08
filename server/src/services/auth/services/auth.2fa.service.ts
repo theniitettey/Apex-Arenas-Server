@@ -349,7 +349,7 @@ export class TwoFactorService {
         return { error: AUTH_ERROR_CODES.USER_NOT_FOUND };
       }
 
-      const is_password_valid = await PasswordService.comparePassword(password, user.password_hash);
+      const is_password_valid = await PasswordService.comparePassword(password, user.password_hash as string);
       if (!is_password_valid) {
         await AuditService.logAuthEvent({
           user_id,
@@ -427,7 +427,7 @@ export class TwoFactorService {
         return { success: false, error: AUTH_ERROR_CODES.USER_NOT_FOUND };
       }
 
-      const is_password_valid = await PasswordService.comparePassword(password, user.password_hash);
+      const is_password_valid = await PasswordService.comparePassword(password, user.password_hash as string);
       if (!is_password_valid) {
         await AuditService.logAuthEvent({
           user_id,

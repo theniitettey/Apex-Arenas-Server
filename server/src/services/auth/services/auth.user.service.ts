@@ -473,6 +473,9 @@ export class UserService {
       // 🔧 FIX #6: Use consolidated password validation
       await this.validateAndCheckPassword(userData.password, 'user_registration');
 
+      if (!userData.password) {
+        throw new Error('PASSWORD_REQUIRED')
+      }
       // Hash password
       const password_hash = await PasswordService.hashPassword(userData.password);
       const password_validation = PasswordService.validatePasswordStrength(userData.password);
@@ -498,6 +501,17 @@ export class UserService {
         is_active: true,
         is_banned: false
       }], { session });
+
+      await User.findByIdAndUpdate(user._id, {
+        $push: {
+          auth_providers: {
+            provider: 'local',
+            provider_user_id: user._id.toString(),
+            linked_at: new Date(),
+            is_primary: true
+          },
+        }
+      }, {session});
 
       // Create user security record (within transaction)
       await UserSecurity.create([{
@@ -667,10 +681,25 @@ export class UserService {
         }
       }
 
+      // Add check for auth provider
+      const has_local_auth = user.auth_providers.some(
+        p => p.provider === 'local'
+      );
+
+      if (!has_local_auth) {
+        return {
+          success: false,
+          error: 'This account uses Google Sign-In. Please use "Sign in with Google"',
+          error_code: 'GOOGLE_AUTH_ONLY'
+        };
+      }
+
+      // Then proceed with password check
+
       // Verify password
       const is_password_valid = await PasswordService.comparePassword(
         credentials.password,
-        user.password_hash
+        user.password_hash as string
       );
 
       if (!is_password_valid) {
@@ -861,7 +890,7 @@ export class UserService {
       // Verify password
       const is_password_valid = await PasswordService.comparePassword(
         credentials.password,
-        admin.password_hash
+        admin.password_hash as string
       );
 
       if (!is_password_valid) {
@@ -1122,7 +1151,7 @@ export class UserService {
         throw new Error(AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      const is_valid = await PasswordService.comparePassword(current_password, user.password_hash);
+      const is_valid = await PasswordService.comparePassword(current_password, user.password_hash as string);
       if (!is_valid) {
         await AuditService.logAuthEvent({
           user_id,
@@ -1160,7 +1189,7 @@ export class UserService {
 
       if (security) {
         const previous_hashes = security.password.previous_hashes || [];
-        previous_hashes.unshift(old_hash);
+        previous_hashes.unshift(old_hash as string);
         security.password.previous_hashes = previous_hashes.slice(0, 5);
         security.password.last_changed_at = new Date();
         security.password.strength_score = password_validation.strength_score;
@@ -1825,6 +1854,101 @@ export class UserService {
       throw error;
     }
   }
+
+  /**
+ * Add password to Google-only account
+ */
+  async addPasswordToAccount(
+    user_id: string,
+    password: string,
+    device_context: DeviceContext
+  ): Promise<{ success: boolean; error?: string; error_code?: string }> {
+    try {
+      logger.info('Adding password to Google-only account', { user_id });
+
+      // 1. Get user
+      const user = await User.findById(user_id);
+      if (!user) {
+        return { 
+          success: false, 
+          error: 'User not found', 
+          error_code: AUTH_ERROR_CODES.USER_NOT_FOUND 
+        };
+      }
+
+      // 2. Check if already has local auth
+      const has_local = user.auth_providers?.some(p => p.provider === 'local');
+      if (has_local) {
+        return {
+          success: false,
+          error: 'Account already has password authentication',
+          error_code: AUTH_ERROR_CODES.LOCAL_AUTH_ALREADY_EXISTS
+        };
+      }
+
+      // 3. Validate password
+      const validation = PasswordService.validatePasswordStrength(password);
+      if (!validation.is_valid) {
+        return {
+          success: false,
+          error: validation.errors.join(', '),
+          error_code: AUTH_ERROR_CODES.WEAK_PASSWORD
+        };
+      }
+
+      // 4. Hash and save password
+      const password_hash = await PasswordService.hashPassword(password);
+      
+      // 5. Update user with password and add local provider
+      await User.findByIdAndUpdate(user_id, {
+        password_hash,
+        $push: {
+          auth_providers: {
+            provider: 'local',
+            provider_user_id: user_id, // Use user ID as provider ID for local
+            linked_at: new Date(),
+            is_primary: false // Keep Google as primary if it exists
+          }
+        }
+      });
+
+      // 6. Update security record
+      await UserSecurity.findOneAndUpdate(
+        { user_id },
+        {
+          $set: {
+            'password.last_changed_at': new Date(),
+            'password.strength_score': validation.strength_score
+          }
+        }
+      );
+
+      // 7. Log the event
+      await AuditService.logAuthEvent({
+        user_id,
+        event_type: 'password_changed',
+        success: true,
+        metadata: {
+          ip_address: device_context.ip_address,
+          user_agent: device_context.user_agent,
+          reason: 'added_password_to_google_account'
+        }
+      });
+
+      logger.info('Password added to Google account', { user_id });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error('Error adding password to account:', error);
+      return {
+        success: false,
+        error: 'Failed to add password',
+        error_code: AUTH_ERROR_CODES.INTERNAL_ERROR
+      };
+    }
+  }
+
+ 
 }
 
 export const userService = new UserService();

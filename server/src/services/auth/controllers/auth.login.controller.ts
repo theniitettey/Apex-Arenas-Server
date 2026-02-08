@@ -24,8 +24,23 @@ export class LoginController {
       });
 
       if (!login_result.success) {
+        // Handle Google-only account trying to use password
+        if (login_result.error_code === AUTH_ERROR_CODES.GOOGLE_ONLY_ACCOUNT) {
+          return sendError(res, AUTH_ERROR_CODES.GOOGLE_ONLY_ACCOUNT, {
+            has_google: true,
+            can_add_password: true
+          }, 'This account uses Google Sign-In. Please use Google to login or add a password in your account settings.');
+        }
+
         if (login_result.error_code === AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED) {
           return sendForbidden(res, AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        }
+        // Handle Google-only account trying to use password
+        if (login_result.error_code === 'GOOGLE_ONLY_ACCOUNT') {
+          return sendError(res, 'GOOGLE_ONLY_ACCOUNT', {
+            has_google: true,
+            can_add_password: true
+          }, 'This account uses Google Sign-In. Please use Google to login or add a password in your account settings.');
         }
         if (login_result.error_code === AUTH_ERROR_CODES.TWO_FA_REQUIRED) {
           return sendSuccess(res, {

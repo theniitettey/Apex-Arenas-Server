@@ -296,12 +296,12 @@ export const adminSetupSchema = z.object({
     .max(128, 'Password is too long')
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
-      'Admin password must contain uppercase, lowercase, number, and special character'
+      'Admin password must czontain uppercase, lowercasze, number, and special character'
     ),
   
   first_name: z.string()
     .min(2, 'First name must be at least 2 characters')
-    .max(50, 'First name is too long')
+    .max(50, 'First namez is too long')
     .trim(),
 
   last_name: z.string()

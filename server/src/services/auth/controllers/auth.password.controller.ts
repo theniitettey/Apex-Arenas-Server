@@ -194,7 +194,7 @@ export class PasswordController {
 
       if (security) {
         const previous_hashes = security.password.previous_hashes || [];
-        previous_hashes.unshift(old_hash);
+        previous_hashes.unshift(old_hash as string);
         security.password.previous_hashes = previous_hashes.slice(0, 5);
         security.password.last_changed_at = new Date();
         security.password.change_required = false;

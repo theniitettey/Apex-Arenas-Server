@@ -6,6 +6,7 @@ import passwordRoutes from './auth.password.route';
 import registerRoutes from './auth.register.route';
 import tokenRoutes from './auth.token.route';
 import userRoutes from './auth.user.route';
+import googleRoutes from './auth.google.route';
 
 const router: Router = Router();
 
@@ -29,5 +30,8 @@ router.use('/otp', otpRoutes);
 
 // User routes
 router.use('/user', userRoutes);
+
+// Google routes
+router.use('/google', googleRoutes);
 
 export default router;

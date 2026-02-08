@@ -114,7 +114,7 @@ export class UserController {
         return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
       }
 
-      const is_valid = await PasswordService.comparePassword(password, user.password_hash);
+      const is_valid = await PasswordService.comparePassword(password, user.password_hash as string);
       if (!is_valid) {
         return sendUnauthorized(res, AUTH_ERROR_CODES.INVALID_CURRENT_PASSWORD);
       }
@@ -209,6 +209,72 @@ export class UserController {
 
     } catch (error: any) {
       logger.error('Get verification status error:', error);
+      return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
+    }
+  }
+
+  /**
+   * POST /auth/user/add-password
+   * Add password to Google-only account
+   */
+  async addPassword(req: AuthRequest, res: Response) {
+    try {
+      const user_id = req.user?.user_id;
+      const { password } = req.body;
+      const device_context = extractDeviceContext(req);
+
+      if (!user_id) {
+        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
+      }
+
+      if (!password) {
+        return sendError(res, AUTH_ERROR_CODES.MISSING_FIELDS, undefined, 'Password is required');
+      }
+
+      const result = await userService.addPasswordToAccount(user_id, password, device_context);
+
+      if (!result.success) {
+        return sendError(res, result.error_code || AUTH_ERROR_CODES.INTERNAL_ERROR, undefined, result.error);
+      }
+
+      return sendSuccess(res, { password_added: true }, 'Password added successfully. You can now login with email and password.');
+    } catch (error: any) {
+      logger.error('Add password error:', error);
+      return sendError(res, AUTH_ERROR_CODES.INTERNAL_ERROR);
+    }
+  }
+
+  /**
+   * GET /auth/user/auth-methods
+   * Get user's available authentication methods
+   */
+  async getAuthMethods(req: AuthRequest, res: Response) {
+    try {
+      const user_id = req.user?.user_id;
+
+      if (!user_id) {
+        return sendUnauthorized(res, AUTH_ERROR_CODES.NOT_AUTHENTICATED);
+      }
+
+      const user = await userService.getUserProfile(user_id);
+      if (!user) {
+        return sendNotFound(res, AUTH_ERROR_CODES.USER_NOT_FOUND);
+      }
+
+      const has_password = !!user.password_hash;
+      const has_google = user.auth_providers?.some(p => p.provider === 'google') || false;
+
+      return sendSuccess(res, {
+        has_password,
+        has_google,
+        providers: user.auth_providers?.map(p => ({
+          provider: p.provider,
+          linked_at: p.linked_at,
+          is_primary: p.is_primary
+        })) || []
+      });
+    } catch (error: any) {
+      logger.error('Get auth methods error:', error);
       return sendError(res, AUTH_ERROR_CODES.FETCH_FAILED);
     }
   }
