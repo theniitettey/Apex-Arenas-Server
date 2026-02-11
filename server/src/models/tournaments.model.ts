@@ -343,6 +343,18 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
 
+// Pre-Saved hook for percentage validation
+ApexTournamentSchema.pre('save', function(next) {
+  if (this.prize_structure.distribution.length > 0) {
+    const totalPercentage = this.prize_structure.distribution.reduce((sum, d) => sum +d.percentage, 0)
+
+    if (totalPercentage !== 100) {
+      return next(new Error('Prize distribution must sum to 100$'));
+    }
+  }
+  next();
+})
+
 // Indexes
 ApexTournamentSchema.index({ organizer_id: 1 });
 ApexTournamentSchema.index({ game_id: 1 });

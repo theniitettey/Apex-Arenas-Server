@@ -1,0 +1,3 @@
+/**
+ * validateRequest - Request new game
+ */

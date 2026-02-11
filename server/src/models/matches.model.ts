@@ -101,6 +101,13 @@ export interface IApexMatch extends Document {
     reason?: string;
     original_winner_id?: mongoose.Types.ObjectId;
   };
+
+  // Add to IApexMatch
+  timeouts: {
+    no_show_timeout_minutes: number; // default: 15
+    result_submission_deadline?: Date;
+    auto_forfeit_enabled: boolean;
+  };
   
   created_at: Date;
   updated_at: Date;
@@ -199,7 +206,15 @@ const ApexMatchSchema = new Schema<IApexMatch>({
     overridden_at: { type: Date },
     reason: { type: String },
     original_winner_id: { type: Schema.Types.ObjectId }
-  }
+  },
+
+  // Add to IApexMatch
+  timeouts: {
+    no_show_timeout_minutes: {type: Number},// default: 15
+    result_submission_deadline: {type: Date},
+    auto_forfeit_enabled: {type: Boolean}
+  },
+
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

@@ -1,0 +1,1 @@
+// Verify user has admin role (reuse from auth)

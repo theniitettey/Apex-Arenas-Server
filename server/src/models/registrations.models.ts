@@ -10,7 +10,10 @@ export interface IApexRegistration extends Document {
   
   // Player's in-game identifier - CRITICAL for winner verification
   in_game_id: string; // must match user's game_profiles entry for tournament's game
-  
+  waitlist_position?: number;
+  promoted_from_waitlist?: boolean;
+  promoted_at?: Date
+
   // For team registrations - track all members
   team_members?: [
     {
@@ -75,7 +78,10 @@ const ApexRegistrationSchema = new Schema<IApexRegistration>({
   registration_type: { type: String, enum: ['solo', 'team'], required: true },
   
   in_game_id: { type: String, required: true },
-  
+  waitlist_position: {type: Number},
+  promoted_from_waitlist: {Type:Boolean},
+  promoted_at: {Type: Date},
+
   team_members: [{
     user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     in_game_id: { type: String, required: true },
