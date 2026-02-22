@@ -1,24 +1,18 @@
-/**
- * submitResults(tournamentId, winnersData) - Organizer submits
-verifyWinners(tournamentId) - Match in-game IDs to registrations
-distributePrizes(tournamentId) - Calculate & create payouts
-getFinalStandings(tournamentId) - Get complete results
-updatePlayerStats(userId, placement, prize) - Update profiles
- */
-
-// file: tournament.results.service.ts
-
 import mongoose from 'mongoose';
-import { Tournament, IApexTournament } from '../../models/tournaments.model';
-import { Registration } from '../../models/registrations.models';
-import { User } from '../../models/user.model';
-import { EscrowAccount } from '../../models/escrow_accounts.model';
-import { PayoutRequest } from '../../models/payout_request.model';
-import { Transaction } from '../../models/transactions.model';
-import { Game } from '../../models/games.model';
+import {
+  Tournament,
+  Registration,
+  User,
+  EscrowAccount,
+  PayoutRequest,
+  Transaction,
+  Game,  
+  type IApexTournament,
+
+} from '../../../models'
+
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { TOURNAMENT_ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('tournament-results-service');
 
@@ -37,13 +31,13 @@ export class TournamentResultsService {
       // 1. Fetch tournament
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // 2. Authorization: ensure organizer is the one submitting
       if (tournament.organizer_id.toString() !== organizerId) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.UNAUTHORIZED,
+          'TOURNAMENT_ORGANIZER_NOT_AUTHENTICATED',
           'Only the tournament organizer can submit results'
         );
       }
@@ -51,7 +45,7 @@ export class TournamentResultsService {
       // 3. Status check – must be 'awaiting_results'
       if (tournament.status !== 'awaiting_results') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          'TOURNAMENT_INVALID_STATUS',
           `Results can only be submitted when tournament is awaiting_results, current: ${tournament.status}`
         );
       }
@@ -59,7 +53,7 @@ export class TournamentResultsService {
       // 4. Validate winners data
       if (!winnersData || winnersData.length === 0) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.RESULTS_EMPTY,
+          'TOURNAMENT_WINNERS_RESULTS_EMPTY',
           'Winners data cannot be empty'
         );
       }
@@ -68,7 +62,7 @@ export class TournamentResultsService {
       const positions = winnersData.map(w => w.position);
       if (new Set(positions).size !== winnersData.length) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.DUPLICATE_POSITION,
+          'TOURNAMENT_DUPLICATE_POSITION',
           'Duplicate positions are not allowed'
         );
       }
@@ -76,7 +70,7 @@ export class TournamentResultsService {
       // Check that positions are positive integers and within expected range
       if (positions.some(p => !Number.isInteger(p) || p <= 0)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_POSITION,
+          'TOURNAMENT_INVALID_POSITION',
           'Positions must be positive integers'
         );
       }
@@ -101,8 +95,9 @@ export class TournamentResultsService {
           in_game_id: w.in_game_id,
           user_id: null as any, // will be populated during verification
           verified: false
-        })),
-        verification_status: 'pending'
+        })) as [{ position: number; in_game_id: string; user_id: mongoose.Types.ObjectId; verified: boolean }],
+        verification_status: 'pending',
+        verified_at: new Date()
       };
 
       // 6. Transition status
@@ -122,7 +117,7 @@ export class TournamentResultsService {
       if (error instanceof AppError) throw error;
       logger.error('Submit results failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.RESULTS_SUBMISSION_FAILED,
+        'TOURNAMENT_RESULTS_SUBMISSION_FAILED',
         error.message || 'Results submission failed'
       );
     }
@@ -137,19 +132,19 @@ export class TournamentResultsService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       if (tournament.status !== 'verifying_results') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          'TOURNAMENT_INVALID_STATUS',
           `Cannot verify winners: tournament status is ${tournament.status}`
         );
       }
 
       if (!tournament.results || !tournament.results.winners) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.RESULTS_NOT_FOUND,
+          'TOURNAMENT_RESULTS_NOT_FOUND',
           'No results found to verify'
         );
       }
@@ -196,7 +191,9 @@ export class TournamentResultsService {
       }
 
       tournament.results.verification_status = allVerified ? 'verified' : 'pending';
-      tournament.results.verified_at = allVerified ? new Date() : undefined;
+      if (allVerified) {
+        tournament.results.verified_at = new Date();
+      }
       await tournament.save();
 
       // If all winners are verified, we can proceed to prize distribution
@@ -217,7 +214,7 @@ export class TournamentResultsService {
       if (error instanceof AppError) throw error;
       logger.error('Verify winners failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.WINNER_VERIFICATION_FAILED,
+        'TOURNAMENT_WINNER_VERIFICATION_FAILED',
         error.message || 'Winner verification failed'
       );
     }
@@ -232,12 +229,12 @@ export class TournamentResultsService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // Free tournaments have no prizes
       if (tournament.is_free || tournament.entry_fee === 0) {
-        logger.info('Free tournament – no prizes to distribute', { tournamentId });
+        logger.info('Free tournament no prizes to distribute', { tournamentId });
         tournament.status = 'completed';
         tournament.completed_at = new Date();
         await tournament.save();
@@ -247,7 +244,7 @@ export class TournamentResultsService {
       // Ensure winners are verified
       if (tournament.results?.verification_status !== 'verified') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.WINNERS_NOT_VERIFIED,
+          'TOURNAMENT_WINNERS_NOT_VERIFIED',
           'Cannot distribute prizes: winners are not verified'
         );
       }
@@ -256,7 +253,7 @@ export class TournamentResultsService {
       const escrow = await EscrowAccount.findOne({ tournament_id: tournamentId });
       if (!escrow) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.ESCROW_NOT_FOUND,
+          'TOURNAMENT_ESCROW_NOT_FOUND',
           'Escrow account not found for prize distribution'
         );
       }
@@ -273,7 +270,7 @@ export class TournamentResultsService {
       const winners = tournament.results.winners.filter(w => w.verified && w.user_id);
       if (winners.length === 0) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.NO_VERIFIED_WINNERS,
+          'TOURNAMENT_NO_VERIFIED_WINNERS',
           'No verified winners to distribute prizes to'
         );
       }
@@ -293,10 +290,13 @@ export class TournamentResultsService {
           position: winner.position,
           in_game_id: winner.in_game_id,
           matched_user_id: winner.user_id,
-          match_status: 'matched' as const,
+          match_status: 'matched' as string,
           prize_percentage: percentage,
           prize_amount: prizeAmount,
-          payout_status: 'allocated' as const,
+          payout_status: 'allocated' as string,
+          payout_transaction_id: undefined as unknown as mongoose.Types.ObjectId,
+          paid_at: undefined as unknown as Date,
+          failure_reason: '',
           retry_count: 0
         };
       });
@@ -305,7 +305,7 @@ export class TournamentResultsService {
       escrow.winner_submissions = {
         submitted_by: tournament.results.submitted_by!,
         submitted_at: tournament.results.submitted_at!,
-        winners: winnerSubmissions,
+        winners: winnerSubmissions as any,
         all_winners_verified: true,
         total_prize_distributed: winnerSubmissions.reduce((sum, w) => sum + w.prize_amount, 0)
       };
@@ -347,7 +347,7 @@ export class TournamentResultsService {
       if (error instanceof AppError) throw error;
       logger.error('Prize distribution failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.PRIZE_DISTRIBUTION_FAILED,
+        'TOURNAMENT_PRIZE_DISTRIBUTION_FAILED',
         error.message || 'Prize distribution failed'
       );
     }
@@ -430,7 +430,7 @@ export class TournamentResultsService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // If tournament is completed, we have final_placement and prize_won on registrations
@@ -444,21 +444,24 @@ export class TournamentResultsService {
         .lean();
 
       // Map to standings format
-      const standings = registrations.map(reg => ({
-        position: reg.final_placement || null,
-        user: {
-          _id: reg.user_id._id,
-          username: reg.user_id.username,
-          name: `${reg.user_id.profile?.first_name || ''} ${reg.user_id.profile?.last_name || ''}`.trim(),
-          avatar: reg.user_id.profile?.avatar_url
-        },
-        in_game_id: reg.in_game_id,
-        status: reg.status,
-        prize_won: options.includePrizes ? reg.prize_won || 0 : undefined,
-        checked_in: reg.check_in?.checked_in || false,
-        disqualified: reg.status === 'disqualified',
-        disqualification_reason: reg.disqualification_reason
-      }));
+      const standings = registrations.map(reg => {
+        const user = reg.user_id as any;
+        return {
+          position: reg.final_placement || null,
+          user: {
+            _id: user._id,
+            username: user.username,
+            name: `${user.profile?.first_name || ''} ${user.profile?.last_name || ''}`.trim(),
+            avatar: user.profile?.avatar_url
+          },
+          in_game_id: reg.in_game_id,
+          status: reg.status,
+          prize_won: options.includePrizes ? reg.prize_won || 0 : undefined,
+          checked_in: reg.check_in?.checked_in || false,
+          disqualified: reg.status === 'disqualified',
+          disqualification_reason: reg.disqualification_reason
+        };
+      });
 
       // If we have winners from results but registrations don't have placements,
       // we can augment with that data
@@ -486,7 +489,7 @@ export class TournamentResultsService {
       if (error instanceof AppError) throw error;
       logger.error('Get final standings failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.STANDINGS_FETCH_FAILED,
+        'STANDINGS_FETCH_FAILED',
         error.message || 'Failed to fetch final standings'
       );
     }
@@ -552,17 +555,17 @@ export class TournamentResultsService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       const escrow = await EscrowAccount.findOne({ tournament_id: tournamentId });
       if (!escrow) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.ESCROW_NOT_FOUND, 'Escrow account not found');
+        throw new AppError('TOURNAMENT_ESCROW_NOT_FOUND', 'Escrow account not found');
       }
 
       if (escrow.status !== 'distributing_organizer' && escrow.status !== 'distributing_prizes') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_ESCROW_STATUS,
+          'INVALID_ESCROW_STATUS',
           `Cannot release organizer earnings when escrow status is ${escrow.status}`
         );
       }
@@ -613,6 +616,9 @@ export class TournamentResultsService {
         net_amount: organizerShare,
         status: 'ready',
         released_at: new Date(),
+        payout_transaction_id: undefined as unknown as mongoose.Types.ObjectId,
+        paid_at: undefined as unknown as Date,
+        failure_reason: '',
         retry_count: 0
       };
       escrow.status = 'completed';
@@ -623,7 +629,7 @@ export class TournamentResultsService {
     } catch (error: any) {
       logger.error('Failed to release organizer earnings', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.ORGANIZER_PAYOUT_FAILED,
+        'TOURNAMENT_ORGANIZER_PAYOUT_FAILED',
         error.message || 'Organizer payout failed'
       );
     }

@@ -1,64 +1,17 @@
-/**
- * create(userId, data) - Create team
-update(teamId, updates) - Update team
-delete(teamId) - Disband team
-getById(teamId) - Fetch team
-list(filters) - List teams
-inviteMember(teamId, userId) - Send invitation
-respondToInvite(teamId, userId, accept) - Accept/decline
-requestJoin(teamId, userId, message) - Request to join
-respondToJoinRequest(teamId, userId, approve) - Approve/deny
-addMember(teamId, userId, role) - Add to members array
-removeMember(teamId, userId) - Kick or leave
-updateStats(teamId, matchResult) - Update team statistics
-verifyTeamSize(teamId, tournamentFormat) - Check roster size
- */
-
-// file: team.service.ts
-
 import mongoose from 'mongoose';
-import { Team, IApexTeam } from '../../models/teams.model';
-import { User } from '../../models/user.model';
-import { Game } from '../../models/games.model';
-import { Tournament } from '../../models/tournaments.model';
+import {
+  Team,
+  User,
+  Game,
+  Tournament,
+  type IApexTeam
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
 import { notificationHelper } from './notification.helper';
 
 const logger = createLogger('team-service');
 
-// -------------------------------------------------------------------------
-// Local error codes (to be moved to shared constants)
-// -------------------------------------------------------------------------
-const TEAM_ERROR_CODES = {
-  NOT_FOUND: 'TEAM_NOT_FOUND',
-  ALREADY_EXISTS: 'TEAM_ALREADY_EXISTS',
-  UNAUTHORIZED: 'TEAM_UNAUTHORIZED',
-  INVALID_NAME: 'TEAM_INVALID_NAME',
-  INVALID_TAG: 'TEAM_INVALID_TAG',
-  CREATE_FAILED: 'TEAM_CREATE_FAILED',
-  UPDATE_FAILED: 'TEAM_UPDATE_FAILED',
-  DELETE_FAILED: 'TEAM_DELETE_FAILED',
-  FETCH_FAILED: 'TEAM_FETCH_FAILED',
-  LIST_FAILED: 'TEAM_LIST_FAILED',
-  INVITE_FAILED: 'TEAM_INVITE_FAILED',
-  INVITE_NOT_FOUND: 'TEAM_INVITE_NOT_FOUND',
-  INVITE_ALREADY_PROCESSED: 'TEAM_INVITE_ALREADY_PROCESSED',
-  JOIN_REQUEST_FAILED: 'TEAM_JOIN_REQUEST_FAILED',
-  JOIN_REQUEST_NOT_FOUND: 'TEAM_JOIN_REQUEST_NOT_FOUND',
-  ALREADY_MEMBER: 'TEAM_ALREADY_MEMBER',
-  ALREADY_INVITED: 'TEAM_ALREADY_INVITED',
-  ALREADY_REQUESTED: 'TEAM_ALREADY_REQUESTED',
-  TEAM_FULL: 'TEAM_FULL',
-  MIN_SIZE_NOT_MET: 'TEAM_MIN_SIZE_NOT_MET',
-  MAX_SIZE_EXCEEDED: 'TEAM_MAX_SIZE_EXCEEDED',
-  CAPTAIN_CANNOT_LEAVE: 'TEAM_CAPTAIN_CANNOT_LEAVE',
-  MEMBER_NOT_FOUND: 'TEAM_MEMBER_NOT_FOUND',
-  ADD_MEMBER_FAILED: 'TEAM_ADD_MEMBER_FAILED',
-  REMOVE_MEMBER_FAILED: 'TEAM_REMOVE_MEMBER_FAILED',
-  STATS_UPDATE_FAILED: 'TEAM_STATS_UPDATE_FAILED',
-  VERIFY_SIZE_FAILED: 'TEAM_VERIFY_SIZE_FAILED',
-};
 
 export class TeamService {
   // ============================================
@@ -71,7 +24,7 @@ export class TeamService {
       // 1. Validate required fields
       if (!data.name || !data.tag || !data.game_id) {
         throw new AppError(
-          TEAM_ERROR_CODES.INVALID_NAME,
+          'TEAM_INVALID_NAME',
           'Name, tag, and game_id are required'
         );
       }
@@ -84,7 +37,7 @@ export class TeamService {
       });
       if (existing) {
         throw new AppError(
-          TEAM_ERROR_CODES.ALREADY_EXISTS,
+          'TEAM_ALREADY_EXISTS',
           'A team with this name already exists for this game'
         );
       }
@@ -92,7 +45,7 @@ export class TeamService {
       // 3. Get user's in-game ID for this game
       const user = await User.findById(userId);
       if (!user) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'User not found');
+        throw new AppError('USER_NOT_FOUND', 'User not found');
       }
 
       const gameProfile = user.game_profiles?.find(
@@ -100,7 +53,7 @@ export class TeamService {
       );
       if (!gameProfile) {
         throw new AppError(
-          TEAM_ERROR_CODES.INVALID_NAME,
+          'INVALID_GAME_PROFILE',
           'You must have a game profile for this game to create a team'
         );
       }
@@ -140,7 +93,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Team creation failed', { error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.CREATE_FAILED,
+        'TEAM_CREATE_FAILED',
         error.message || 'Failed to create team'
       );
     }
@@ -155,13 +108,13 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Verify captain
       if (team.captain_id.toString() !== userId) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'Only the team captain can update the team'
         );
       }
@@ -176,7 +129,7 @@ export class TeamService {
         });
         if (existing) {
           throw new AppError(
-            TEAM_ERROR_CODES.ALREADY_EXISTS,
+            'TEAM_NAME_ALREADY_EXISTS',
             'A team with this name already exists for this game'
           );
         }
@@ -202,7 +155,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Team update failed', { teamId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.UPDATE_FAILED,
+        'TEAM_UPDATE_FAILED',
         error.message || 'Failed to update team'
       );
     }
@@ -217,13 +170,13 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Verify captain
       if (team.captain_id.toString() !== userId) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'Only the team captain can disband the team'
         );
       }
@@ -240,7 +193,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Team deletion failed', { teamId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.DELETE_FAILED,
+        'TEAM_DELETE_FAILED',
         error.message || 'Failed to disband team'
       );
     }
@@ -257,7 +210,7 @@ export class TeamService {
         .populate('game_id', 'name slug logo_url');
 
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       return team;
@@ -265,7 +218,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Get team failed', { teamId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.FETCH_FAILED,
+        'TEAM_FETCH_FAILED',
         error.message || 'Failed to fetch team'
       );
     }
@@ -307,7 +260,7 @@ export class TeamService {
     } catch (error: any) {
       logger.error('List teams failed', { error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.LIST_FAILED,
+        'TEAM_LIST_FAILED',
         error.message || 'Failed to list teams'
       );
     }
@@ -322,13 +275,13 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Verify captain
       if (team.captain_id.toString() !== captainId) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'Only the team captain can send invitations'
         );
       }
@@ -337,7 +290,7 @@ export class TeamService {
       const isMember = team.members.some(m => m.user_id.toString() === userId && m.status === 'active');
       if (isMember) {
         throw new AppError(
-          TEAM_ERROR_CODES.ALREADY_MEMBER,
+          'USER_ALREADY_MEMBER',
           'User is already a member of this team'
         );
       }
@@ -348,7 +301,7 @@ export class TeamService {
       );
       if (hasPendingInvite) {
         throw new AppError(
-          TEAM_ERROR_CODES.ALREADY_INVITED,
+          'TEAM_INVITATION_ALREADY_INVITED',
           'User already has a pending invitation'
         );
       }
@@ -356,7 +309,7 @@ export class TeamService {
       // Check team capacity
       if (team.members.length >= team.max_size) {
         throw new AppError(
-          TEAM_ERROR_CODES.TEAM_FULL,
+          'TEAM_CAPACITY_FULL',
           'Team has reached maximum member capacity'
         );
       }
@@ -376,9 +329,9 @@ export class TeamService {
       await team.save();
 
       // Send notification
-      await notificationHelper.notifyTeamInvite?.(userId, team).catch(err => {
-        logger.error('Failed to send team invite notification', { userId, teamId, error: err.message });
-      });
+      // await notificationHelper.notifyTeamInvite?.(userId, team).catch(err: any => {
+      //   logger.error('Failed to send team invite notification', { userId, teamId, error: err.message });
+      // });
 
       logger.info('Invitation sent', { teamId, userId });
       return team;
@@ -386,7 +339,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Invite member failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.INVITE_FAILED,
+        'TEAM_MEMBER_INVITE_FAILED',
         error.message || 'Failed to invite member'
       );
     }
@@ -405,7 +358,7 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Find pending invitation
@@ -414,7 +367,7 @@ export class TeamService {
       );
       if (!invitation) {
         throw new AppError(
-          TEAM_ERROR_CODES.INVITE_NOT_FOUND,
+          'TEAM_PENDING_INVITE_NOT_FOUND',
           'No pending invitation found for this user'
         );
       }
@@ -424,7 +377,7 @@ export class TeamService {
         invitation.status = 'expired';
         await team.save();
         throw new AppError(
-          TEAM_ERROR_CODES.INVITE_NOT_FOUND,
+          'TEAM_INVITATION_EXPIRED',
           'Invitation has expired'
         );
       }
@@ -435,7 +388,7 @@ export class TeamService {
           invitation.status = 'expired'; // or keep as pending? Mark expired.
           await team.save();
           throw new AppError(
-            TEAM_ERROR_CODES.TEAM_FULL,
+            'TEAM_CAPACITY_FULL',
             'Team is now full, invitation cannot be accepted'
           );
         }
@@ -454,7 +407,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Respond to invite failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.INVITE_FAILED,
+        'TEAM_RESPOND_INVITE_FAILED',
         error.message || 'Failed to respond to invitation'
       );
     }
@@ -469,12 +422,12 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       if (!team.settings.is_recruiting) {
         throw new AppError(
-          TEAM_ERROR_CODES.JOIN_REQUEST_FAILED,
+          'TEAM_JOIN_REQUEST_FAILED',
           'This team is not currently recruiting'
         );
       }
@@ -483,7 +436,7 @@ export class TeamService {
       const isMember = team.members.some(m => m.user_id.toString() === userId && m.status === 'active');
       if (isMember) {
         throw new AppError(
-          TEAM_ERROR_CODES.ALREADY_MEMBER,
+          'USER_ALREADY_MEMBER',
           'You are already a member of this team'
         );
       }
@@ -494,7 +447,7 @@ export class TeamService {
       );
       if (hasPendingRequest) {
         throw new AppError(
-          TEAM_ERROR_CODES.ALREADY_REQUESTED,
+          'TEAM_MEMBERSHIP_ALREADY_REQUESTED',
           'You already have a pending join request'
         );
       }
@@ -502,7 +455,7 @@ export class TeamService {
       // Check capacity
       if (team.members.length >= team.max_size) {
         throw new AppError(
-          TEAM_ERROR_CODES.TEAM_FULL,
+          'TEAM_CAPACITY_FULL',
           'Team has reached maximum member capacity'
         );
       }
@@ -518,9 +471,9 @@ export class TeamService {
       await team.save();
 
       // Notify captain
-      await notificationHelper.notifyTeamJoinRequest?.(team.captain_id.toString(), team, userId).catch(err => {
-        logger.error('Failed to notify captain of join request', { teamId, captainId: team.captain_id, error: err.message });
-      });
+      // await notificationHelper.notifyTeamJoinRequest?.(team.captain_id.toString(), team, userId).catch(err => {
+      //   logger.error('Failed to notify captain of join request', { teamId, captainId: team.captain_id, error: err.message });
+      // });
 
       logger.info('Join request submitted', { teamId, userId });
       return team;
@@ -528,7 +481,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Request join failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.JOIN_REQUEST_FAILED,
+        'TEAM_JOIN_REQUEST_FAILED',
         error.message || 'Failed to request join'
       );
     }
@@ -548,13 +501,13 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Verify captain
       if (team.captain_id.toString() !== captainId) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'Only the team captain can respond to join requests'
         );
       }
@@ -565,7 +518,7 @@ export class TeamService {
       );
       if (!request) {
         throw new AppError(
-          TEAM_ERROR_CODES.JOIN_REQUEST_NOT_FOUND,
+          'TEAM_JOIN_REQUEST_NOT_FOUND',
           'No pending join request found for this user'
         );
       }
@@ -576,7 +529,7 @@ export class TeamService {
           request.status = 'declined'; // Can't accept because full
           await team.save();
           throw new AppError(
-            TEAM_ERROR_CODES.TEAM_FULL,
+            'TEAM_CAPACITY_FULL',
             'Team is full, cannot accept request'
           );
         }
@@ -599,7 +552,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Respond to join request failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.JOIN_REQUEST_FAILED,
+        'TEAM_JOIN_REQUEST_FAILED',
         error.message || 'Failed to respond to join request'
       );
     }
@@ -616,7 +569,7 @@ export class TeamService {
     try {
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Check if already member
@@ -624,7 +577,7 @@ export class TeamService {
       if (existingMember) {
         if (existingMember.status === 'active') {
           throw new AppError(
-            TEAM_ERROR_CODES.ALREADY_MEMBER,
+            'USER_ALREADY_MEMBER',
             'User is already a member of this team'
           );
         } else {
@@ -640,7 +593,7 @@ export class TeamService {
       // Check capacity
       if (team.members.length >= team.max_size) {
         throw new AppError(
-          TEAM_ERROR_CODES.TEAM_FULL,
+          'TEAM_CAPACITY_TEAM_FULL',
           'Team has reached maximum member capacity'
         );
       }
@@ -652,7 +605,7 @@ export class TeamService {
       );
       if (!gameProfile) {
         throw new AppError(
-          TEAM_ERROR_CODES.ADD_MEMBER_FAILED,
+          'TEAM_ADD_MEMBER_FAILED',
           'User does not have a game profile for this game'
         );
       }
@@ -672,7 +625,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Add member failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.ADD_MEMBER_FAILED,
+        'TEAM_ADD_MEMBER_FAILED',
         error.message || 'Failed to add member to team'
       );
     }
@@ -687,13 +640,13 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       const memberIndex = team.members.findIndex(m => m.user_id.toString() === userId);
       if (memberIndex === -1) {
         throw new AppError(
-          TEAM_ERROR_CODES.MEMBER_NOT_FOUND,
+          'TEAM_MEMBER_NOT_FOUND',
           'User is not a member of this team'
         );
       }
@@ -706,7 +659,7 @@ export class TeamService {
 
       if (!isCaptain && !isSelf) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'You are not authorized to remove this member'
         );
       }
@@ -714,7 +667,7 @@ export class TeamService {
       // Captain cannot leave without transferring ownership (or disbanding)
       if (member.role === 'captain' && !isCaptain) {
         throw new AppError(
-          TEAM_ERROR_CODES.CAPTAIN_CANNOT_LEAVE,
+          'TEAM_CAPTAIN_CANNOT_LEAVE',
           'Captain cannot leave; disband the team or transfer ownership first'
         );
       }
@@ -733,7 +686,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Remove member failed', { teamId, userId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.REMOVE_MEMBER_FAILED,
+        'TEAM_REMOVE_MEMBER_FAILED',
         error.message || 'Failed to remove member'
       );
     }
@@ -752,7 +705,7 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       if (matchResult.tournaments_played) {
@@ -779,7 +732,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Update stats failed', { teamId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.STATS_UPDATE_FAILED,
+        'TEAM_STATS_UPDATE_FAILED',
         error.message || 'Failed to update team statistics'
       );
     }
@@ -800,7 +753,7 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       // Parse format (e.g., '2v2', '3v3', '5v5')
@@ -834,7 +787,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Verify team size failed', { teamId, tournamentFormat, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.VERIFY_SIZE_FAILED,
+        'TEAM_VERIFY_SIZE_FAILED',
         error.message || 'Failed to verify team size'
       );
     }
@@ -849,12 +802,12 @@ export class TeamService {
 
       const team = await Team.findById(teamId);
       if (!team) {
-        throw new AppError(TEAM_ERROR_CODES.NOT_FOUND, 'Team not found');
+        throw new AppError('TEAM_NOT_FOUND', 'Team not found');
       }
 
       if (team.captain_id.toString() !== currentCaptainId) {
         throw new AppError(
-          TEAM_ERROR_CODES.UNAUTHORIZED,
+          'TEAM_MEMBER_UNAUTHORIZED',
           'Only the current captain can transfer ownership'
         );
       }
@@ -863,7 +816,7 @@ export class TeamService {
       const newCaptainMember = team.members.find(m => m.user_id.toString() === newCaptainId && m.status === 'active');
       if (!newCaptainMember) {
         throw new AppError(
-          TEAM_ERROR_CODES.MEMBER_NOT_FOUND,
+          'TEAM_ACTIVE_MEMBER_NOT_FOUND',
           'New captain must be an active member of the team'
         );
       }
@@ -883,7 +836,7 @@ export class TeamService {
       if (error instanceof AppError) throw error;
       logger.error('Transfer ownership failed', { teamId, error: error.message });
       throw new AppError(
-        TEAM_ERROR_CODES.UPDATE_FAILED,
+        'TEAM_OWNERSHIP_TRANSFER_FAILED',
         error.message || 'Failed to transfer ownership'
       );
     }

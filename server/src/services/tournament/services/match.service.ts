@@ -1,47 +1,18 @@
-/**
- * getById(matchId, includeParticipants?) - Fetch match
-submitResult(matchId, winnerId, proof) - Player reports result
-confirmResult(matchId, userId) - Opponent confirms
-disputeResult(matchId, userId, reason) - Start dispute
-resolveDispute(matchId, winnerId, resolution) - Organizer resolves
-adminOverride(matchId, winnerId, reason) - Admin overrides
-advanceWinner(matchId) - Move winner to next match
-updateMatchStatus(matchId, newStatus) - Status transitions
-autoForfeit(matchId) - No-show handling
-listByTournament(tournamentId, round?) - Get matches
- */
-
-// file: match.service.ts
-
 import mongoose from 'mongoose';
-import { Match, IApexMatch } from '../../models/matches.model';
-import { Tournament } from '../../models/tournaments.model';
-import { Registration } from '../../models/registrations.models';
-import { User } from '../../models/user.model';
+import {
+  Match,
+  Tournament,
+  Registration,
+  User,
+  type IApexMatch
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
 import { notificationHelper } from './notification.helper';
 
 const logger = createLogger('match-service');
 
-// Local error codes (to be moved to shared constants later)
-const MATCH_ERROR_CODES = {
-  NOT_FOUND: 'MATCH_NOT_FOUND',
-  UNAUTHORIZED: 'MATCH_UNAUTHORIZED',
-  INVALID_STATUS: 'MATCH_INVALID_STATUS',
-  ALREADY_COMPLETED: 'MATCH_ALREADY_COMPLETED',
-  ALREADY_DISPUTED: 'MATCH_ALREADY_DISPUTED',
-  INVALID_WINNER: 'MATCH_INVALID_WINNER',
-  RESULT_ALREADY_SUBMITTED: 'MATCH_RESULT_ALREADY_SUBMITTED',
-  CONFIRMATION_FAILED: 'MATCH_CONFIRMATION_FAILED',
-  DISPUTE_FAILED: 'MATCH_DISPUTE_FAILED',
-  RESOLVE_FAILED: 'MATCH_RESOLVE_FAILED',
-  OVERRIDE_FAILED: 'MATCH_OVERRIDE_FAILED',
-  ADVANCE_FAILED: 'MATCH_ADVANCE_FAILED',
-  STATUS_TRANSITION_FAILED: 'MATCH_STATUS_TRANSITION_FAILED',
-  AUTO_FORFEIT_FAILED: 'MATCH_AUTO_FORFEIT_FAILED',
-  LIST_FAILED: 'MATCH_LIST_FAILED',
-};
+
 
 export class MatchService {
   // ============================================
@@ -67,7 +38,7 @@ export class MatchService {
 
       const match = await query.exec();
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       return match;
@@ -75,7 +46,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Fetch match failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.NOT_FOUND,
+        'MATCH_NOT_FOUND',
         error.message || 'Failed to fetch match'
       );
     }
@@ -95,13 +66,13 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       // 1. Check match status – only allow if status is 'ongoing' or 'scheduled'
       if (!['ongoing', 'scheduled', 'ready_check'].includes(match.status)) {
         throw new AppError(
-          MATCH_ERROR_CODES.INVALID_STATUS,
+          'MATCH_INVALID_STATUS',
           `Cannot submit result when match status is ${match.status}`
         );
       }
@@ -112,7 +83,7 @@ export class MatchService {
       );
       if (!isParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_UNAUTHORIZED',
           'Only participants can submit match results'
         );
       }
@@ -123,7 +94,7 @@ export class MatchService {
       );
       if (!winnerParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.INVALID_WINNER,
+          'MATCH_INVALID_WINNER',
           'Winner must be a participant of this match'
         );
       }
@@ -131,7 +102,7 @@ export class MatchService {
       // 4. Check if result already submitted (to prevent overwriting)
       if (match.result_reported_by) {
         throw new AppError(
-          MATCH_ERROR_CODES.RESULT_ALREADY_SUBMITTED,
+          'MATCH_RESULT_ALREADY_SUBMITTED',
           'Result already submitted by a player'
         );
       }
@@ -168,7 +139,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Submit result failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.NOT_FOUND,
+        'MATCH_NOT_FOUND',
         error.message || 'Failed to submit result'
       );
     }
@@ -183,7 +154,7 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       // 1. Verify user is the opponent (the one who didn't submit)
@@ -194,7 +165,7 @@ export class MatchService {
       );
       if (!isOpponent) {
         throw new AppError(
-          MATCH_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_UNAUTHORIZED',
           'Only the opponent can confirm the result'
         );
       }
@@ -202,7 +173,7 @@ export class MatchService {
       // 2. Check that result was submitted
       if (!match.result_reported_by) {
         throw new AppError(
-          MATCH_ERROR_CODES.CONFIRMATION_FAILED,
+          'MATCH_CONFIRMATION_FAILED',
           'No result has been submitted yet'
         );
       }
@@ -210,13 +181,13 @@ export class MatchService {
       // 3. Check match is not already completed or disputed
       if (match.status === 'completed') {
         throw new AppError(
-          MATCH_ERROR_CODES.ALREADY_COMPLETED,
+          'MATCH_ALREADY_COMPLETED',
           'Match is already completed'
         );
       }
       if (match.dispute?.is_disputed) {
         throw new AppError(
-          MATCH_ERROR_CODES.ALREADY_DISPUTED,
+          'MATCH_ALREADY_DISPUTED',
           'Match is under dispute, cannot confirm'
         );
       }
@@ -258,7 +229,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Confirm result failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.CONFIRMATION_FAILED,
+        'MATCH_CONFIRMATION_FAILED',
         error.message || 'Failed to confirm result'
       );
     }
@@ -278,7 +249,7 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       // 1. Verify user is a participant
@@ -287,7 +258,7 @@ export class MatchService {
       );
       if (!isParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_UNAUTHORIZED',
           'Only participants can dispute a result'
         );
       }
@@ -295,7 +266,7 @@ export class MatchService {
       // 2. Check that result was submitted
       if (!match.result_reported_by) {
         throw new AppError(
-          MATCH_ERROR_CODES.DISPUTE_FAILED,
+          'MATCH_DISPUTE_FAILED',
           'No result has been submitted yet'
         );
       }
@@ -303,7 +274,7 @@ export class MatchService {
       // 3. Check not already disputed
       if (match.dispute?.is_disputed) {
         throw new AppError(
-          MATCH_ERROR_CODES.ALREADY_DISPUTED,
+          'MATCH_ALREADY_DISPUTED',
           'Match is already under dispute'
         );
       }
@@ -324,7 +295,7 @@ export class MatchService {
       const tournament = await Tournament.findById(match.tournament_id);
       if (tournament) {
         await notificationHelper.notifyResultDisputed(
-          tournament.organizer_id.toString(),
+          [tournament.organizer_id.toString()],
           match
         );
       }
@@ -335,7 +306,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Dispute result failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.DISPUTE_FAILED,
+        'MATCH_DISPUTE_FAILED',
         error.message || 'Failed to dispute result'
       );
     }
@@ -355,14 +326,14 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       // 1. Verify user is tournament organizer
       const tournament = await Tournament.findById(match.tournament_id);
       if (!tournament || tournament.organizer_id.toString() !== organizerId) {
         throw new AppError(
-          MATCH_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_UNAUTHORIZED',
           'Only tournament organizer can resolve disputes'
         );
       }
@@ -370,7 +341,7 @@ export class MatchService {
       // 2. Check match is disputed
       if (!match.dispute?.is_disputed) {
         throw new AppError(
-          MATCH_ERROR_CODES.RESOLVE_FAILED,
+          'MATCH_RESOLVE_FAILED',
           'Match is not under dispute'
         );
       }
@@ -381,7 +352,7 @@ export class MatchService {
       );
       if (!winnerParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.INVALID_WINNER,
+          'MATCH_INVALID_WINNER',
           'Winner must be a participant of this match'
         );
       }
@@ -431,7 +402,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Resolve dispute failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.RESOLVE_FAILED,
+        'MATCH_RESOLVE_FAILED',
         error.message || 'Failed to resolve dispute'
       );
     }
@@ -451,7 +422,7 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_.NOT_FOUND', 'Match not found');
       }
 
       // 1. Verify winner is a participant
@@ -460,7 +431,7 @@ export class MatchService {
       );
       if (!winnerParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.INVALID_WINNER,
+          'MATCH_INVALID_WINNER',
           'Winner must be a participant of this match'
         );
       }
@@ -510,7 +481,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Admin override failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.OVERRIDE_FAILED,
+        'MATCH_OVERRIDE_FAILED',
         error.message || 'Failed to override match result'
       );
     }
@@ -525,7 +496,7 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       if (!match.next_match_id) {
@@ -535,7 +506,7 @@ export class MatchService {
 
       if (!match.winner_id) {
         throw new AppError(
-          MATCH_ERROR_CODES.ADVANCE_FAILED,
+          'MATCH_ADVANCE_FAILED',
           'Cannot advance: match has no winner'
         );
       }
@@ -543,7 +514,7 @@ export class MatchService {
       const nextMatch = await Match.findById(match.next_match_id);
       if (!nextMatch) {
         throw new AppError(
-          MATCH_ERROR_CODES.NOT_FOUND,
+          'MATCH_NOT_FOUND',
           'Next match not found'
         );
       }
@@ -556,7 +527,7 @@ export class MatchService {
 
       if (!winnerParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.ADVANCE_FAILED,
+          'MATCH_ADVANCE_FAILED',
           'Winner participant not found in match'
         );
       }
@@ -591,7 +562,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Advance winner failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.ADVANCE_FAILED,
+        'MATCH_ADVANCE_FAILED',
         error.message || 'Failed to advance winner'
       );
     }
@@ -606,7 +577,7 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       const allowedTransitions: Record<string, string[]> = {
@@ -621,7 +592,7 @@ export class MatchService {
 
       if (!allowedTransitions[match.status]?.includes(newStatus)) {
         throw new AppError(
-          MATCH_ERROR_CODES.STATUS_TRANSITION_FAILED,
+          'MATCH_STATUS_TRANSITION_FAILED',
           `Cannot transition from ${match.status} to ${newStatus}`
         );
       }
@@ -646,7 +617,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Update match status failed', { matchId, newStatus, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.STATUS_TRANSITION_FAILED,
+        'MATCH_STATUS_TRANSITION_FAILED',
         error.message || 'Failed to update match status'
       );
     }
@@ -661,13 +632,13 @@ export class MatchService {
 
       const match = await Match.findById(matchId);
       if (!match) {
-        throw new AppError(MATCH_ERROR_CODES.NOT_FOUND, 'Match not found');
+        throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
       // Only applicable for scheduled or ready_check status
       if (!['scheduled', 'ready_check', 'ongoing'].includes(match.status)) {
         throw new AppError(
-          MATCH_ERROR_CODES.INVALID_STATUS,
+          'MATCH_INVALID_STATUS',
           `Cannot auto-forfeit match with status ${match.status}`
         );
       }
@@ -676,7 +647,7 @@ export class MatchService {
       const noShowParticipant = match.participants.find(p => !p.is_ready);
       if (!noShowParticipant) {
         throw new AppError(
-          MATCH_ERROR_CODES.AUTO_FORFEIT_FAILED,
+          'MATCH_AUTO_FORFEIT_FAILED',
           'No participant marked as not ready'
         );
       }
@@ -685,7 +656,7 @@ export class MatchService {
       const winner = match.participants.find(p => p !== noShowParticipant);
       if (!winner) {
         throw new AppError(
-          MATCH_ERROR_CODES.AUTO_FORFEIT_FAILED,
+          'MATCH_AUTO_FORFEIT_FAILED',
           'Could not determine winner'
         );
       }
@@ -724,7 +695,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Auto forfeit failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.AUTO_FORFEIT_FAILED,
+        'MATCH_AUTO_FORFEIT_FAILED',
         error.message || 'Failed to auto-forfeit match'
       );
     }
@@ -756,7 +727,7 @@ export class MatchService {
     } catch (error: any) {
       logger.error('List matches by tournament failed', { tournamentId, error: error.message });
       throw new AppError(
-        MATCH_ERROR_CODES.LIST_FAILED,
+        'MATCH_LIST_FAILED',
         error.message || 'Failed to list matches'
       );
     }

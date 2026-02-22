@@ -9,13 +9,14 @@ disqualifyNoShows(tournamentId) - After check-in closes
 // file: checkin.service.ts
 
 import mongoose from 'mongoose';
-import { Tournament, IApexTournament } from '../../models/tournaments.model';
-import { Registration, IApexRegistration } from '../../models/registrations.models';
-import { User } from '../../models/user.model';
-import { tournamentValidationService } from './tournament.validation.service';
+import {
+  Tournament,
+  Registration,
+  type IApexTournament,
+  type IApexRegistration
+} from '../../../models'
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { TOURNAMENT_ERROR_CODES } from '../../../shared/constants/error-codes';
 import { notificationHelper } from './notification.helper';
 
 const logger = createLogger('checkin-service');
@@ -31,13 +32,13 @@ export class CheckinService {
       // 1. Fetch tournament and validate check-in window
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // Validate tournament status allows check-in
       if (!['open', 'locked', 'ready_to_start'].includes(tournament.status)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          'INVALID_STATUS',
           `Check-in not allowed when tournament status is ${tournament.status}`
         );
       }
@@ -54,7 +55,7 @@ export class CheckinService {
 
       if (!registration) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.REGISTRATION_NOT_FOUND,
+          'REGISTRATION_NOT_FOUND',
           'No active registration found for this tournament'
         );
       }
@@ -62,7 +63,7 @@ export class CheckinService {
       // 3. Check if already checked in
       if (registration.check_in?.checked_in) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.ALREADY_CHECKED_IN,
+          'ALREADY_CHECKED_IN',
           'Player has already checked in'
         );
       }
@@ -87,7 +88,7 @@ export class CheckinService {
       if (error instanceof AppError) throw error;
       logger.error('Check-in failed', { tournamentId, userId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_FAILED,
+        'CHECK_IN_FAILED',
         error.message || 'Check-in failed'
       );
     }
@@ -101,21 +102,21 @@ export class CheckinService {
 
     if (!tournament.schedule.check_in_start || !tournament.schedule.check_in_end) {
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_WINDOW_NOT_DEFINED,
+        'CHECK_IN_WINDOW_NOT_DEFINED',
         'Check-in window is not defined for this tournament'
       );
     }
 
     if (now < tournament.schedule.check_in_start) {
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_NOT_STARTED,
+        'CHECK_IN_NOT_STARTED',
         'Check-in has not started yet'
       );
     }
 
     if (now > tournament.schedule.check_in_end) {
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_ENDED,
+        'CHECK_IN_ENDED',
         'Check-in window has ended'
       );
     }
@@ -143,7 +144,7 @@ export class CheckinService {
         'capacity schedule check_in_start check_in_end status'
       );
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       const totalRegistered = await Registration.countDocuments({
@@ -179,7 +180,7 @@ export class CheckinService {
       if (error instanceof AppError) throw error;
       logger.error('Get check-in stats failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_STATS_FAILED,
+        'CHECK_IN_STATS_FAILED',
         error.message || 'Failed to fetch check-in stats'
       );
     }
@@ -194,7 +195,7 @@ export class CheckinService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // Only send reminders if check-in window is open or about to open
@@ -236,7 +237,7 @@ export class CheckinService {
             tournament
           );
           sentCount++;
-        } catch (notifyError) {
+        } catch (notifyError: any) {
           logger.error('Failed to send reminder to user', {
             tournamentId,
             userId: reg.user_id,
@@ -250,7 +251,7 @@ export class CheckinService {
     } catch (error: any) {
       logger.error('Send check-in reminders failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_REMINDER_FAILED,
+        'CHECK_IN_REMINDER_FAILED',
         error.message || 'Failed to send check-in reminders'
       );
     }
@@ -265,14 +266,14 @@ export class CheckinService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // Only run if check-in window has ended
       const now = new Date();
       if (!tournament.schedule.check_in_end || now <= tournament.schedule.check_in_end) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.CHECK_IN_NOT_ENDED,
+          'CHECK_IN_NOT_ENDED',
           'Cannot disqualify no-shows before check-in window ends'
         );
       }
@@ -314,7 +315,7 @@ export class CheckinService {
       if (error instanceof AppError) throw error;
       logger.error('Disqualify no-shows failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.DISQUALIFY_NO_SHOWS_FAILED,
+        'DISQUALIFY_NO_SHOWS_FAILED',
         error.message || 'Failed to disqualify no-shows'
       );
     }
@@ -333,7 +334,7 @@ export class CheckinService {
 
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       // Validate that check-in window is open (or organizer override allowed)
@@ -390,7 +391,7 @@ export class CheckinService {
     } catch (error: any) {
       logger.error('Bulk check-in failed', { tournamentId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.BULK_CHECK_IN_FAILED,
+        'BULK_CHECK_IN_FAILED',
         error.message || 'Bulk check-in failed'
       );
     }

@@ -1,4 +1,5 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { number } from 'joi';
+import mongoose, { Document, Schema,  CallbackWithoutResultAndOptionalError } from 'mongoose';
 
 export interface IApexTournament extends Document {
   _id: mongoose.Types.ObjectId;
@@ -15,6 +16,7 @@ export interface IApexTournament extends Document {
   
   // Free vs Paid tournament
   is_free: boolean; // true = no entry fee, no prize pool
+  
   
 
   schedule: {
@@ -98,6 +100,7 @@ export interface IApexTournament extends Document {
     scoring_system: string;
     anti_cheat_required: boolean;
     stream_required: boolean;
+    default_best_of: number;
     in_game_id_required: boolean; // Players must provide their in-game ID
   };
   
@@ -174,6 +177,11 @@ export interface IApexTournament extends Document {
     min_team_size?: number;
     max_team_size?: number;
   };
+
+  timeouts: {
+    no_show_timeout_minutes: number,
+    auto_forteit_enabled: boolean,
+  },
   
   created_at: Date;
   updated_at: Date;
@@ -237,17 +245,27 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
   currency: { type: String, default: 'GHS' },
   
   prize_structure: {
-    organizer_gross_deposit: { type: Number, default: 0 },
-    platform_fee_percentage: { type: Number, default: 1 },
-    platform_fee_amount: { type: Number, default: 0 },
-    net_prize_pool: { type: Number, default: 0 },
-    total_winning_positions: { type: Number, default: 1 },
-    distribution: [{
+  organizer_gross_deposit: { type: Number, default: 0 },
+  platform_fee_percentage: { type: Number, default: 1 },
+  platform_fee_amount: { type: Number, default: 0 },
+  net_prize_pool: { type: Number, default: 0 },
+  total_winning_positions: { type: Number, default: 1 },
+  distribution: {
+    type: [{
       position: { type: Number, required: true },
       percentage: { type: Number, required: true },
       amount: { type: Number, default: 0 }
-    }]
-  },
+    }],
+    validate: {
+      validator: function(v: any[]) {
+        if (v.length === 0) return true;
+        const totalPercentage = v.reduce((sum, d) => sum + d.percentage, 0);
+        return totalPercentage === 100;
+      },
+      message: 'Prize distribution percentages must sum to 100%'
+    }
+  }
+},
   
   player_platform_fee: {
     percentage: { type: Number, default: 10 },
@@ -276,6 +294,7 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
     scoring_system: { type: String },
     anti_cheat_required: { type: Boolean, default: false },
     stream_required: { type: Boolean, default: false },
+    default_best_of: {type: Number, default: true},
     in_game_id_required: { type: Boolean, default: true }
   },
   
@@ -335,6 +354,8 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
     min_team_size: { type: Number },
     max_team_size: { type: Number }
   },
+
+  
   
   published_at: { type: Date },
   started_at: { type: Date },
@@ -343,17 +364,7 @@ const ApexTournamentSchema = new Schema<IApexTournament>({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
 
-// Pre-Saved hook for percentage validation
-ApexTournamentSchema.pre('save', function(next) {
-  if (this.prize_structure.distribution.length > 0) {
-    const totalPercentage = this.prize_structure.distribution.reduce((sum, d) => sum +d.percentage, 0)
 
-    if (totalPercentage !== 100) {
-      return next(new Error('Prize distribution must sum to 100$'));
-    }
-  }
-  next();
-})
 
 // Indexes
 ApexTournamentSchema.index({ organizer_id: 1 });

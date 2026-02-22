@@ -1,18 +1,3 @@
-/**
- * notifyRegistrationConfirmed(userId, tournament)
-notifyCheckInReminder(userId, tournament)
-notifyMatchScheduled(userIds, match)
-notifyMatchStarting(userIds, match)
-notifyResultSubmitted(userId, match)
-notifyResultDisputed(userIds, match)
-notifyDisputeResolved(userIds, match, winner)
-notifyPrizeWon(userId, amount, tournament)
-notifyTournamentCancelled(userIds, tournament)
-notifyGameRequestApproved(userId, game)
- */
-
-// file: notification.helper.ts
-
 import { createLogger } from '../../../shared/utils/logger.utils';
 
 const logger = createLogger('notification-helper');
@@ -29,7 +14,7 @@ export const notificationHelper = {
    * Notify user that their tournament registration is confirmed
    */
   async notifyRegistrationConfirmed(userId: string, tournament: any): Promise<void> {
-    logger.info('🔔 [NOTIFICATION] Registration confirmed', {
+    logger.info('[NOTIFICATION] Registration confirmed', {
       userId,
       tournamentId: tournament?._id || tournament,
       tournamentTitle: tournament?.title,
@@ -38,10 +23,27 @@ export const notificationHelper = {
   },
 
   /**
+   * Notify user that they have been promoted from the waitlist
+   */
+  async notifyWaitlistPromotion(userId: string, tournament: any): Promise<void> {
+    logger.info('[NOTIFICATION] Waitlist promotion', {
+      userId,
+      tournamentId: tournament?._id || tournament,
+      tournamentTitle: tournament?.title,
+      entryFee: tournament?.entry_fee,
+      isFree: tournament?.is_free,
+      message: tournament?.is_free 
+        ? 'You have been promoted from the waitlist and are now registered!'
+        : 'You have been promoted from the waitlist. Please complete payment within 24 hours.',
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  /**
    * Send check-in reminder to a player
    */
   async notifyCheckInReminder(userId: string, tournament: any): Promise<void> {
-    logger.info('⏰ [NOTIFICATION] Check-in reminder', {
+    logger.info('[NOTIFICATION] Check-in reminder', {
       userId,
       tournamentId: tournament?._id || tournament,
       tournamentTitle: tournament?.title,
@@ -57,7 +59,7 @@ export const notificationHelper = {
    * Notify players that a match has been scheduled
    */
   async notifyMatchScheduled(userIds: string[], match: any): Promise<void> {
-    logger.info('📅 [NOTIFICATION] Match scheduled', {
+    logger.info('[NOTIFICATION] Match scheduled', {
       userIds,
       matchId: match?._id || match,
       tournamentId: match?.tournament_id,
@@ -71,7 +73,7 @@ export const notificationHelper = {
    * Notify players that a match is about to start (ready check)
    */
   async notifyMatchStarting(userIds: string[], match: any): Promise<void> {
-    logger.info('🚀 [NOTIFICATION] Match starting', {
+    logger.info('[NOTIFICATION] Match starting', {
       userIds,
       matchId: match?._id || match,
       tournamentId: match?.tournament_id,
@@ -85,7 +87,7 @@ export const notificationHelper = {
    * Notify opponent that a result has been submitted for their match
    */
   async notifyResultSubmitted(userId: string, match: any): Promise<void> {
-    logger.info('✅ [NOTIFICATION] Result submitted', {
+    logger.info('[NOTIFICATION] Result submitted', {
       userId,
       matchId: match?._id || match,
       tournamentId: match?.tournament_id,
@@ -99,7 +101,7 @@ export const notificationHelper = {
    * Notify tournament organizer that a match result has been disputed
    */
   async notifyResultDisputed(userIds: string[], match: any): Promise<void> {
-    logger.info('⚠️ [NOTIFICATION] Result disputed', {
+    logger.info('[NOTIFICATION] Result disputed', {
       userIds,
       matchId: match?._id || match,
       tournamentId: match?.tournament_id,
@@ -113,7 +115,7 @@ export const notificationHelper = {
    * Notify match participants that a dispute has been resolved
    */
   async notifyDisputeResolved(userIds: string[], match: any, winnerId: string): Promise<void> {
-    logger.info('⚖️ [NOTIFICATION] Dispute resolved', {
+    logger.info('[NOTIFICATION] Dispute resolved', {
       userIds,
       matchId: match?._id || match,
       tournamentId: match?.tournament_id,
@@ -128,7 +130,7 @@ export const notificationHelper = {
    * Notify player that they have won a prize
    */
   async notifyPrizeWon(userId: string, amount: number, tournament: any): Promise<void> {
-    logger.info('🏆 [NOTIFICATION] Prize won', {
+    logger.info('[NOTIFICATION] Prize won', {
       userId,
       amount,
       tournamentId: tournament?._id || tournament,
@@ -142,7 +144,7 @@ export const notificationHelper = {
    * Notify all registered players that a tournament has been cancelled
    */
   async notifyTournamentCancelled(userIds: string[], tournament: any): Promise<void> {
-    logger.info('❌ [NOTIFICATION] Tournament cancelled', {
+    logger.info('[NOTIFICATION] Tournament cancelled', {
       userIds,
       tournamentId: tournament?._id || tournament,
       tournamentTitle: tournament?.title,
@@ -156,10 +158,36 @@ export const notificationHelper = {
    * Notify user that their game request has been approved
    */
   async notifyGameRequestApproved(userId: string, game: any): Promise<void> {
-    logger.info('🎮 [NOTIFICATION] Game request approved', {
+    logger.info('[NOTIFICATION] Game request approved', {
       userId,
       gameId: game?._id || game,
       gameName: game?.name,
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  /**
+   * Notify user that their payment deadline is approaching
+   */
+  async notifyPaymentDeadlineReminder(userId: string, tournament: any, deadline: Date): Promise<void> {
+    logger.info('[NOTIFICATION] Payment deadline reminder', {
+      userId,
+      tournamentId: tournament?._id || tournament,
+      tournamentTitle: tournament?.title,
+      deadline: deadline.toISOString(),
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  /**
+   * Notify user that their promotion has expired due to non-payment
+   */
+  async notifyPromotionExpired(userId: string, tournament: any): Promise<void> {
+    logger.info('[NOTIFICATION] Promotion expired', {
+      userId,
+      tournamentId: tournament?._id || tournament,
+      tournamentTitle: tournament?.title,
+      reason: 'Payment deadline expired',
       timestamp: new Date().toISOString()
     });
   }

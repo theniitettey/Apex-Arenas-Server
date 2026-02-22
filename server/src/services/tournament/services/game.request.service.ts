@@ -1,22 +1,13 @@
-/**
- * create(userId, data) - User requests game
-upvote(requestId, userId) - Upvote request
-list(filters, sort) - List requests (sorted by upvotes)
-adminReview(requestId, adminId, decision) - Approve/reject
-createGameFromRequest(requestId) - Convert request to game
-markDuplicate(requestId, duplicateOfId) - Mark as duplicate
- */
-
-// file: game.request.service.ts
-
 import mongoose from 'mongoose';
-import { GameRequest, IApexGameRequest } from '../../models/game_request.model';
-import { Game } from '../../models/games.model';
-import { User } from '../../models/user.model';
+import {
+  GameRequest,
+  Game,
+  User,
+  IApexGameRequest
+} from '../../../models';
 import { gameService } from './game.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { GAME_REQUEST_ERROR_CODES } from '../../../shared/constants/error-codes';
 import { gameRequestValidator } from '../validators/game.request.validator';
 import { notificationHelper } from './notification.helper';
 
@@ -44,7 +35,7 @@ export class GameRequestService {
 
       if (existing) {
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.DUPLICATE_REQUEST,
+          'DUPLICATE_REQUEST',
           'A request for this game is already pending or approved'
         );
       }
@@ -53,15 +44,23 @@ export class GameRequestService {
       const existingGame = await Game.findOne({ slug });
       if (existingGame) {
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.GAME_ALREADY_EXISTS,
+          'GAME_ALREADY_EXISTS',
           'This game already exists in our platform'
         );
       }
 
-      // 5. Create request
+      // 5. Normalize platform to always be an array
+      const platform = validated.platform
+        ? Array.isArray(validated.platform)
+          ? validated.platform
+          : [validated.platform]
+        : undefined;
+
+      // 6. Create request
       const request = await GameRequest.create({
         requester_id: new mongoose.Types.ObjectId(userId),
         ...validated,
+        platform,
         slug,
         upvotes: 1, // Auto-upvote from creator
         upvoted_by: [new mongoose.Types.ObjectId(userId)],
@@ -77,7 +76,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Game request creation failed', { error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.CREATE_FAILED,
+        'CREATE_FAILED',
         error.message || 'Failed to create game request'
       );
     }
@@ -92,16 +91,16 @@ export class GameRequestService {
 
       const request = await GameRequest.findById(requestId);
       if (!request) {
-        throw new AppError(GAME_REQUEST_ERROR_CODES.NOT_FOUND, 'Game request not found');
+        throw new AppError('NOT_FOUND', 'Game request not found');
       }
 
       // Check if user already upvoted
       const userIdObj = new mongoose.Types.ObjectId(userId);
-      const alreadyUpvoted = request.upvoted_by.some(id => id.toString() === userId);
+      const alreadyUpvoted = request.upvoted_by.some((id: mongoose.Types.ObjectId) => id.toString() === userId);
 
       if (alreadyUpvoted) {
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.ALREADY_UPVOTED,
+          'ALREADY_UPVOTED',
           'User has already upvoted this request'
         );
       }
@@ -117,7 +116,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Upvote failed', { requestId, userId, error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.UPVOTE_FAILED,
+        'UPVOTE_FAILED',
         error.message || 'Failed to upvote request'
       );
     }
@@ -156,7 +155,7 @@ export class GameRequestService {
     } catch (error: any) {
       logger.error('List game requests failed', { error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.LIST_FAILED,
+        'LIST_FAILED',
         error.message || 'Failed to list game requests'
       );
     }
@@ -180,7 +179,7 @@ export class GameRequestService {
 
       const request = await GameRequest.findById(requestId);
       if (!request) {
-        throw new AppError(GAME_REQUEST_ERROR_CODES.NOT_FOUND, 'Game request not found');
+        throw new AppError('NOT_FOUND', 'Game request not found');
       }
 
       // Update admin review fields
@@ -228,7 +227,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Admin review failed', { requestId, adminId, error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.ADMIN_REVIEW_FAILED,
+        'ADMIN_REVIEW_FAILED',
         error.message || 'Failed to process admin review'
       );
     }
@@ -243,19 +242,19 @@ export class GameRequestService {
 
       const request = await GameRequest.findById(requestId);
       if (!request) {
-        throw new AppError(GAME_REQUEST_ERROR_CODES.NOT_FOUND, 'Game request not found');
+        throw new AppError('NOT_FOUND', 'Game request not found');
       }
 
       if (request.status !== 'approved') {
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.REQUEST_NOT_APPROVED,
+          'REQUEST_NOT_APPROVED',
           'Cannot create game from non-approved request'
         );
       }
 
       if (request.approved_game_id) {
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.GAME_ALREADY_CREATED,
+          'GAME_ALREADY_CREATED',
           'Game has already been created from this request'
         );
       }
@@ -268,7 +267,7 @@ export class GameRequestService {
         request.status = 'duplicate';
         await request.save();
         throw new AppError(
-          GAME_REQUEST_ERROR_CODES.GAME_ALREADY_EXISTS,
+          'GAME_ALREADY_EXISTS',
           'Game already exists, request marked as duplicate'
         );
       }
@@ -309,7 +308,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Create game from request failed', { requestId, error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.CREATE_GAME_FAILED,
+        'CREATE_GAME_FAILED',
         error.message || 'Failed to create game from request'
       );
     }
@@ -324,7 +323,7 @@ export class GameRequestService {
 
       const request = await GameRequest.findById(requestId);
       if (!request) {
-        throw new AppError(GAME_REQUEST_ERROR_CODES.NOT_FOUND, 'Game request not found');
+        throw new AppError('GAME_REQUEST_NOT_FOUND', 'Game request not found');
       }
 
       request.status = 'duplicate';
@@ -337,7 +336,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Mark duplicate failed', { requestId, duplicateOfId, error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.MARK_DUPLICATE_FAILED,
+        'MARK_DUPLICATE_FAILED',
         error.message || 'Failed to mark request as duplicate'
       );
     }
@@ -355,7 +354,7 @@ export class GameRequestService {
         .populate('approved_game_id', 'name slug logo_url');
 
       if (!request) {
-        throw new AppError(GAME_REQUEST_ERROR_CODES.NOT_FOUND, 'Game request not found');
+        throw new AppError('NOT_FOUND', 'Game request not found');
       }
 
       return request;
@@ -363,7 +362,7 @@ export class GameRequestService {
       if (error instanceof AppError) throw error;
       logger.error('Get game request failed', { requestId, error: error.message });
       throw new AppError(
-        GAME_REQUEST_ERROR_CODES.FETCH_FAILED,
+        'FETCH_FAILED',
         error.message || 'Failed to fetch game request'
       );
     }

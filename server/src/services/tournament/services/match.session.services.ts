@@ -1,145 +1,24 @@
-/**
- * createSession(matchId) - Create chat session when match starts
-getSession(matchId, userId) - Get session if user is participant
-sendMessage(matchId, userId, message) - Add chat message
-uploadEvidence(matchId, userId, fileUrl) - Upload proof
-getMessages(matchId, pagination) - Get chat history
-notifyParticipants(sessionId, notification) - Notify all in session
-archiveSession(matchId) - Make read-only after resolution
-getArchivedSessions(userId) - User's past sessions
- */
-
-// file: match.session.services.ts
-
-import mongoose, { Document, Schema, Model } from 'mongoose';
-import { Match } from '../../models/matches.model';
-import { User } from '../../models/user.model';
+import mongoose from 'mongoose';
+import {
+  Match,
+  User,
+  MatchSession,
+  type IApexMessage,
+  type IApexMatchSession
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
 import { notificationHelper } from './notification.helper';
+import { 
+  uploadToCloudinary,
+  uploadBase64ToCloudinary,
+  getFileTypeFromMimetype,
 
+  type UploadResult
+} from '../../../shared/utils/cloudinary.utils';
 const logger = createLogger('match-session-service');
 
-// -------------------------------------------------------------------------
-// Local error codes (to be moved to shared constants)
-// -------------------------------------------------------------------------
-const MATCH_SESSION_ERROR_CODES = {
-  NOT_FOUND: 'MATCH_SESSION_NOT_FOUND',
-  ALREADY_EXISTS: 'MATCH_SESSION_ALREADY_EXISTS',
-  UNAUTHORIZED: 'MATCH_SESSION_UNAUTHORIZED',
-  MATCH_NOT_FOUND: 'MATCH_NOT_FOUND',
-  CREATE_FAILED: 'MATCH_SESSION_CREATE_FAILED',
-  FETCH_FAILED: 'MATCH_SESSION_FETCH_FAILED',
-  MESSAGE_FAILED: 'MATCH_SESSION_MESSAGE_FAILED',
-  EVIDENCE_FAILED: 'MATCH_SESSION_EVIDENCE_FAILED',
-  NOTIFY_FAILED: 'MATCH_SESSION_NOTIFY_FAILED',
-  ARCHIVE_FAILED: 'MATCH_SESSION_ARCHIVE_FAILED',
-  ARCHIVED_SESSIONS_FAILED: 'MATCH_SESSION_ARCHIVED_FAILED',
-};
 
-// -------------------------------------------------------------------------
-// Message Subdocument Schema
-// -------------------------------------------------------------------------
-interface IMessage {
-  _id?: mongoose.Types.ObjectId;
-  user_id: mongoose.Types.ObjectId;
-  username?: string; // denormalized for quick display
-  message: string;
-  type: 'text' | 'system' | 'evidence';
-  attachments?: string[];
-  created_at: Date;
-  edited: boolean;
-  edited_at?: Date;
-}
-
-const MessageSchema = new Schema<IMessage>({
-  user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
-  username: { type: String },
-  message: { type: String, required: true, maxlength: 1000 },
-  type: { type: String, enum: ['text', 'system', 'evidence'], default: 'text' },
-  attachments: [{ type: String }],
-  created_at: { type: Date, default: Date.now },
-  edited: { type: Boolean, default: false },
-  edited_at: { type: Date }
-});
-
-// -------------------------------------------------------------------------
-// Match Session Model Interface
-// -------------------------------------------------------------------------
-export interface IApexMatchSession extends Document {
-  _id: mongoose.Types.ObjectId;
-  match_id: mongoose.Types.ObjectId;
-  tournament_id: mongoose.Types.ObjectId;
-  
-  // Participants (denormalized for quick auth checks)
-  participant_ids: mongoose.Types.ObjectId[];
-  organizer_id: mongoose.Types.ObjectId;
-  
-  // Session data
-  status: 'active' | 'archived' | 'locked';
-  started_at: Date;
-  ended_at?: Date;
-  
-  // Messages
-  messages: IMessage[];
-  message_count: number;
-  
-  // Evidence (screenshots, videos)
-  evidence: Array<{
-    _id?: mongoose.Types.ObjectId;
-    user_id: mongoose.Types.ObjectId;
-    username?: string;
-    file_url: string;
-    file_type: string; // 'image', 'video', 'other'
-    uploaded_at: Date;
-    description?: string;
-  }>;
-  
-  // Settings
-  is_read_only: boolean;
-  allow_evidence_upload: boolean;
-  
-  created_at: Date;
-  updated_at: Date;
-}
-
-const MatchSessionSchema = new Schema<IApexMatchSession>({
-  match_id: { type: Schema.Types.ObjectId, ref: 'ApexMatch', required: true, unique: true },
-  tournament_id: { type: Schema.Types.ObjectId, ref: 'ApexTournament', required: true },
-  
-  participant_ids: [{ type: Schema.Types.ObjectId, ref: 'ApexUser', required: true }],
-  organizer_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
-  
-  status: { type: String, enum: ['active', 'archived', 'locked'], default: 'active' },
-  started_at: { type: Date, default: Date.now },
-  ended_at: { type: Date },
-  
-  messages: [MessageSchema],
-  message_count: { type: Number, default: 0 },
-  
-  evidence: [{
-    user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
-    username: { type: String },
-    file_url: { type: String, required: true },
-    file_type: { type: String, enum: ['image', 'video', 'other'], required: true },
-    uploaded_at: { type: Date, default: Date.now },
-    description: { type: String, maxlength: 500 }
-  }],
-  
-  is_read_only: { type: Boolean, default: false },
-  allow_evidence_upload: { type: Boolean, default: true }
-}, {
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
-});
-
-// Indexes
-MatchSessionSchema.index({ match_id: 1 }, { unique: true });
-MatchSessionSchema.index({ tournament_id: 1 });
-MatchSessionSchema.index({ participant_ids: 1 });
-MatchSessionSchema.index({ status: 1 });
-MatchSessionSchema.index({ started_at: -1 });
-
-export const MatchSession = mongoose.model<IApexMatchSession>('ApexMatchSession', MatchSessionSchema);
 
 // -------------------------------------------------------------------------
 // Service Class
@@ -156,7 +35,7 @@ export class MatchSessionService {
       const existing = await MatchSession.findOne({ match_id: matchId });
       if (existing) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.ALREADY_EXISTS,
+          'MATCH_SESSION_ALREADY_EXISTS',
           'Match session already exists for this match'
         );
       }
@@ -168,7 +47,7 @@ export class MatchSessionService {
       
       if (!match) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.MATCH_NOT_FOUND,
+          'MATCH_SESSION_MATCH_NOT_FOUND',
           'Match not found'
         );
       }
@@ -210,7 +89,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Create session failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.CREATE_FAILED,
+        'MATCH_SESSION_CREATE_FAILED',
         error.message || 'Failed to create match session'
       );
     }
@@ -226,7 +105,7 @@ export class MatchSessionService {
       const session = await MatchSession.findOne({ match_id: matchId });
       if (!session) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.NOT_FOUND,
+          'MATCH_SESSION_NOT_FOUND',
           'Match session not found'
         );
       }
@@ -239,7 +118,7 @@ export class MatchSessionService {
 
       if (!isParticipant && !isOrganizer) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_SESSION_UNAUTHORIZED',
           'You are not authorized to view this session'
         );
       }
@@ -249,7 +128,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Get session failed', { matchId, userId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.FETCH_FAILED,
+        'MATCH_SESSION_FETCH_FAILED',
         error.message || 'Failed to fetch match session'
       );
     }
@@ -270,7 +149,7 @@ export class MatchSessionService {
       
       if (session.is_read_only || session.status !== 'active') {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_SESSION_UNAUTHORIZED',
           'Session is read-only or archived'
         );
       }
@@ -279,7 +158,8 @@ export class MatchSessionService {
       const user = await User.findById(userId).select('username');
       const username = user?.username || 'Unknown';
 
-      const newMessage: IMessage = {
+      const newMessage: IApexMessage = {
+        _id: new mongoose.Types.ObjectId(),
         user_id: new mongoose.Types.ObjectId(userId),
         username,
         message,
@@ -298,15 +178,154 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Send message failed', { matchId, userId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.MESSAGE_FAILED,
+        'MATCH_SESSION_MESSAGE_FAILED',
         error.message || 'Failed to send message'
       );
     }
   }
 
-  // ============================================
-  // UPLOAD EVIDENCE
-  // ============================================
+
+
+
+
+  /**
+   * Upload evidence from file buffer (for multipart/form-data uploads)
+   */
+  async uploadEvidenceFromBuffer(
+    matchId: string,
+    userId: string,
+    fileBuffer: Buffer,
+    mimetype: string,
+    description?: string
+  ): Promise<IApexMatchSession> {
+    try {
+      logger.info('Uploading evidence from buffer', { matchId, userId, mimetype });
+
+      // 1. Get and validate session
+      const session = await this.getSession(matchId, userId);
+      
+      if (!session.allow_evidence_upload || session.is_read_only || session.status !== 'active') {
+        throw new AppError(
+          'MATCH_SESSION_UNAUTHORIZED',
+          'Evidence upload is not allowed at this time'
+        );
+      }
+
+      // 2. Determine file type
+      const fileType = getFileTypeFromMimetype(mimetype);
+
+      // 3. Upload to Cloudinary
+      const uploadResult = await uploadToCloudinary(fileBuffer, {
+        folder: `apex-arenas/evidence/${matchId}`,
+        resource_type: fileType === 'video' ? 'video' : 'image'
+      });
+
+      // 4. Get user info
+      const user = await User.findById(userId).select('username');
+      const username = user?.username || 'Unknown';
+
+      // 5. Save evidence to session
+      session.evidence.push({
+        user_id: new mongoose.Types.ObjectId(userId),
+        username,
+        file_url: uploadResult.url,
+        file_type: fileType,
+        uploaded_at: new Date(),
+        description
+      });
+      await session.save();
+
+      // 6. Add system message
+      await this.addSystemMessage(
+        session._id.toString(),
+        `${username} uploaded ${fileType} evidence`
+      );
+
+      logger.info('Evidence uploaded successfully', { 
+        sessionId: session._id, 
+        publicId: uploadResult.public_id 
+      });
+      
+      return session;
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      logger.error('Upload evidence failed', { matchId, userId, error: error.message });
+      throw new AppError(
+        'MATCH_SESSION_EVIDENCE_FAILED',
+        error.message || 'Failed to upload evidence'
+      );
+    }
+  }
+
+  /**
+   * Upload evidence from base64 string (for mobile/direct uploads)
+   */
+  async uploadEvidenceFromBase64(
+    matchId: string,
+    userId: string,
+    base64String: string,
+    fileType: 'image' | 'video' | 'other' = 'image',
+    description?: string
+  ): Promise<IApexMatchSession> {
+    try {
+      logger.info('Uploading evidence from base64', { matchId, userId, fileType });
+
+      // 1. Get and validate session
+      const session = await this.getSession(matchId, userId);
+      
+      if (!session.allow_evidence_upload || session.is_read_only || session.status !== 'active') {
+        throw new AppError(
+          'MATCH_SESSION_UNAUTHORIZED',
+          'Evidence upload is not allowed at this time'
+        );
+      }
+
+      // 2. Upload to Cloudinary
+      const uploadResult = await uploadBase64ToCloudinary(base64String, {
+        folder: `apex-arenas/evidence/${matchId}`,
+        resource_type: fileType === 'video' ? 'video' : 'image'
+      });
+
+      // 3. Get user info
+      const user = await User.findById(userId).select('username');
+      const username = user?.username || 'Unknown';
+
+      // 4. Save evidence to session
+      session.evidence.push({
+        user_id: new mongoose.Types.ObjectId(userId),
+        username,
+        file_url: uploadResult.url,
+        file_type: fileType,
+        uploaded_at: new Date(),
+        description
+      });
+      await session.save();
+
+      // 5. Add system message
+      await this.addSystemMessage(
+        session._id.toString(),
+        `${username} uploaded ${fileType} evidence`
+      );
+
+      logger.info('Evidence uploaded successfully', { 
+        sessionId: session._id, 
+        url: uploadResult.url 
+      });
+      
+      return session;
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      logger.error('Upload evidence from base64 failed', { matchId, userId, error: error.message });
+      throw new AppError(
+        'MATCH_SESSION_EVIDENCE_FAILED',
+        error.message || 'Failed to upload evidence'
+      );
+    }
+  }
+
+  /**
+   * Upload evidence with pre-uploaded URL (keep for backward compatibility)
+   */
   async uploadEvidence(
     matchId: string,
     userId: string,
@@ -315,13 +334,13 @@ export class MatchSessionService {
     description?: string
   ): Promise<IApexMatchSession> {
     try {
-      logger.info('Uploading evidence', { matchId, userId, fileUrl });
+      logger.info('Uploading evidence with URL', { matchId, userId, fileUrl });
 
       const session = await this.getSession(matchId, userId);
       
       if (!session.allow_evidence_upload || session.is_read_only || session.status !== 'active') {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.UNAUTHORIZED,
+          'MATCH_SESSION_UNAUTHORIZED',
           'Evidence upload is not allowed at this time'
         );
       }
@@ -339,10 +358,9 @@ export class MatchSessionService {
       });
       await session.save();
 
-      // Also add a system message about evidence upload
       await this.addSystemMessage(
         session._id.toString(),
-        `${username} uploaded evidence: ${fileType}`
+        `${username} uploaded ${fileType} evidence`
       );
 
       logger.info('Evidence uploaded', { sessionId: session._id });
@@ -351,7 +369,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Upload evidence failed', { matchId, userId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.EVIDENCE_FAILED,
+        'MATCH_SESSION_EVIDENCE_FAILED',
         error.message || 'Failed to upload evidence'
       );
     }
@@ -364,7 +382,7 @@ export class MatchSessionService {
     matchId: string,
     userId: string,
     pagination: { page?: number; limit?: number; before?: Date } = {}
-  ): Promise<{ messages: IMessage[]; total: number; hasMore: boolean }> {
+  ): Promise<{ messages: IApexMessage[]; total: number; hasMore: boolean }> {
     try {
       const session = await this.getSession(matchId, userId);
       
@@ -392,7 +410,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Get messages failed', { matchId, userId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.FETCH_FAILED,
+        'MATCH_SESSION_FETCH_FAILED',
         error.message || 'Failed to fetch messages'
       );
     }
@@ -411,7 +429,7 @@ export class MatchSessionService {
       const session = await MatchSession.findById(sessionId);
       if (!session) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.NOT_FOUND,
+          'MATCH_SESSION_NOT_FOUND',
           'Session not found'
         );
       }
@@ -431,7 +449,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Notify participants failed', { sessionId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.NOTIFY_FAILED,
+        'MATCH_SESSION_NOTIFY_FAILED',
         error.message || 'Failed to notify participants'
       );
     }
@@ -447,7 +465,7 @@ export class MatchSessionService {
       const session = await MatchSession.findOne({ match_id: matchId });
       if (!session) {
         throw new AppError(
-          MATCH_SESSION_ERROR_CODES.NOT_FOUND,
+          'MATCH_SESSION_NOT_FOUND',
           'Match session not found'
         );
       }
@@ -466,7 +484,7 @@ export class MatchSessionService {
       if (error instanceof AppError) throw error;
       logger.error('Archive session failed', { matchId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.ARCHIVE_FAILED,
+        'MATCH_SESSION_ARCHIVE_FAILED',
         error.message || 'Failed to archive session'
       );
     }
@@ -505,7 +523,7 @@ export class MatchSessionService {
     } catch (error: any) {
       logger.error('Get archived sessions failed', { userId, error: error.message });
       throw new AppError(
-        MATCH_SESSION_ERROR_CODES.ARCHIVED_SESSIONS_FAILED,
+        'MATCH_SESSION_ARCHIVED_FAILED',
         error.message || 'Failed to fetch archived sessions'
       );
     }
@@ -519,7 +537,8 @@ export class MatchSessionService {
       const session = await MatchSession.findById(sessionId);
       if (!session) return;
 
-      const systemMessage: IMessage = {
+      const systemMessage: IApexMessage = {
+        _id: new mongoose.Types.ObjectId(),
         user_id: session.organizer_id, // system messages attributed to organizer? better have a system user.
         username: 'System',
         message: text,
@@ -531,7 +550,7 @@ export class MatchSessionService {
       session.messages.push(systemMessage);
       session.message_count += 1;
       await session.save();
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to add system message', { sessionId, error: error.message });
     }
   }

@@ -13,9 +13,14 @@ linkMatches(matches) - Set next_match_id references
 // IMPROVED VERSION – Single Elimination complete, others significantly enhanced
 
 import mongoose from 'mongoose';
-import { Tournament, IApexTournament } from '../../models/tournaments.model';
-import { Registration, IApexRegistration } from '../../models/registrations.models';
-import { Match, IApexMatch } from '../../models/matches.model';
+import {
+  Tournament,
+  Registration,
+  Match,
+  type IApexTournament,
+  type IApexRegistration,
+  type IApexMatch
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
 
@@ -74,7 +79,7 @@ export class BracketGeneratorService {
       const minRequired = this.getMinimumPlayers(tournament.tournament_type);
       if (registrations.length < minRequired) {
         throw new AppError(
-          BRACKET_ERROR_CODES.INSUFFICIENT_PLAYERS,
+          'INSUFFICIENT_PLAYERS',
           `Need at least ${minRequired} players for ${tournament.tournament_type}`
         );
       }
@@ -103,7 +108,7 @@ export class BracketGeneratorService {
           break;
         default:
           throw new AppError(
-            BRACKET_ERROR_CODES.INVALID_TOURNAMENT_TYPE,
+            'INVALID_TOURNAMENT_TYPE',
             `Unsupported tournament type: ${tournament.tournament_type}`
           );
       }
@@ -131,7 +136,7 @@ export class BracketGeneratorService {
       if (error instanceof AppError) throw error;
       logger.error('Bracket generation failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        BRACKET_ERROR_CODES.GENERATION_FAILED,
+        'GENERATION_FAILED',
         error.message || 'Failed to generate bracket'
       );
     }
@@ -175,7 +180,7 @@ export class BracketGeneratorService {
     } catch (error: any) {
       logger.error('Seeding failed', { error: error.message });
       throw new AppError(
-        BRACKET_ERROR_CODES.SEEDING_FAILED,
+        'SEEDING_FAILED'   ,
         error.message || 'Failed to seed players'
       );
     }
@@ -315,7 +320,7 @@ export class BracketGeneratorService {
     const playerCount = players.length;
     if (playerCount < 4) {
       throw new AppError(
-        BRACKET_ERROR_CODES.INSUFFICIENT_PLAYERS,
+        'INSUFFICIENT_PLAYERS',
         'Need at least 4 players for double elimination'
       );
     }
@@ -342,7 +347,7 @@ export class BracketGeneratorService {
     const n = players.length;
     if (n < 2) {
       throw new AppError(
-        BRACKET_ERROR_CODES.INSUFFICIENT_PLAYERS,
+        'INSUFFICIENT_PLAYERS',
         'Need at least 2 players for round robin'
       );
     }
@@ -538,9 +543,9 @@ export class BracketGeneratorService {
           },
           schedule: {
             scheduled_time,
-            ready_check_time: null,
-            started_at: null,
-            completed_at: null
+            ready_check_time: undefined,
+            started_at: undefined,
+            completed_at: undefined
           },
           status: 'pending',
           timeouts: {
@@ -556,7 +561,7 @@ export class BracketGeneratorService {
     } catch (error: any) {
       logger.error('Create match structure failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        BRACKET_ERROR_CODES.MATCH_CREATION_FAILED,
+        'MATCH_CREATION_FAILED',
         error.message || 'Failed to create match documents'
       );
     }
@@ -622,7 +627,7 @@ export class BracketGeneratorService {
     } catch (error: any) {
       logger.error('Link matches failed', { error: error.message });
       throw new AppError(
-        BRACKET_ERROR_CODES.LINKING_FAILED,
+        'LINKING_FAILED',
         error.message || 'Failed to link matches'
       );
     }

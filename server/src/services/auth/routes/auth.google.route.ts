@@ -16,7 +16,7 @@ const router: Router = Router();
  * POST /auth/google
  * Authenticate or register with Google
  * Public (rate limited)
- */
+ */ 
 router.post(
   '/',
   loginRateLimiter,

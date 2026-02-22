@@ -1,22 +1,11 @@
-/**
- * create(adminId, data) - Admin creates game
-update(gameId, updates) - Update game
-delete(gameId) - Delete game (if no tournaments)
-getById(gameId) - Fetch game
-list(filters) - List games
-toggleActive(gameId) - Activate/deactivate
-updateStats(gameId, statsUpdate) - Update statistics
-validateInGameId(gameId, inGameId) - Validate format
- */
-
-// file: game.service.ts
-
 import mongoose from 'mongoose';
-import { Game, IApexGame } from '../../models/games.model';
-import { Tournament } from '../../models/tournaments.model';
+import {
+  Game,
+  Tournament,
+  IApexGame
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { GAME_ERROR_CODES } from '../../../shared/constants/error-codes';
 import { gameValidator } from '../validators/game.validator';
 
 const logger = createLogger('game-service');
@@ -39,14 +28,22 @@ export class GameService {
       const existing = await Game.findOne({ slug });
       if (existing) {
         throw new AppError(
-          GAME_ERROR_CODES.DUPLICATE_SLUG,
+          'DUPLICATE_SLUG',
           'A game with this name already exists'
         );
       }
 
-      // 4. Create game document
+      // 4. Normalize platform to array if it's a string
+      const platform = validated.platform
+        ? Array.isArray(validated.platform)
+          ? validated.platform
+          : [validated.platform]
+        : undefined;
+
+      // 5. Create game document
       const game = await Game.create({
         ...validated,
+        platform,
         slug,
         added_by: new mongoose.Types.ObjectId(adminId),
         is_active: true,
@@ -64,7 +61,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Game creation failed', { error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.CREATE_FAILED,
+        'CREATE_FAILED',
         error.message || 'Failed to create game'
       );
     }
@@ -79,7 +76,7 @@ export class GameService {
 
       const game = await Game.findById(gameId);
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       // 1. Validate update data
@@ -92,7 +89,7 @@ export class GameService {
         const existing = await Game.findOne({ slug: newSlug, _id: { $ne: gameId } });
         if (existing) {
           throw new AppError(
-            GAME_ERROR_CODES.DUPLICATE_SLUG,
+            'DUPLICATE_SLUG',
             'A game with this name already exists'
           );
         }
@@ -109,7 +106,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Game update failed', { gameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.UPDATE_FAILED,
+        'UPDATE_FAILED',
         error.message || 'Failed to update game'
       );
     }
@@ -124,14 +121,14 @@ export class GameService {
 
       const game = await Game.findById(gameId);
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       // Check if any tournaments reference this game
       const tournamentsCount = await Tournament.countDocuments({ game_id: gameId });
       if (tournamentsCount > 0) {
         throw new AppError(
-          GAME_ERROR_CODES.HAS_TOURNAMENTS,
+          'HAS_TOURNAMENTS',
           `Cannot delete game: ${tournamentsCount} tournament(s) use this game`
         );
       }
@@ -142,7 +139,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Game deletion failed', { gameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.DELETE_FAILED,
+        'DELETE_FAILED',
         error.message || 'Failed to delete game'
       );
     }
@@ -157,7 +154,7 @@ export class GameService {
 
       const game = await Game.findById(gameId);
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       return game;
@@ -165,7 +162,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Fetch game failed', { gameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.FETCH_FAILED,
+        'FETCH_FAILED',
         error.message || 'Failed to fetch game'
       );
     }
@@ -201,7 +198,7 @@ export class GameService {
     } catch (error: any) {
       logger.error('List games failed', { error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.LIST_FAILED,
+        'LIST_FAILED',
         error.message || 'Failed to list games'
       );
     }
@@ -216,7 +213,7 @@ export class GameService {
 
       const game = await Game.findById(gameId);
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       game.is_active = !game.is_active;
@@ -228,7 +225,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Toggle active failed', { gameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.TOGGLE_ACTIVE_FAILED,
+        'TOGGLE_ACTIVE_FAILED',
         error.message || 'Failed to toggle active status'
       );
     }
@@ -248,7 +245,7 @@ export class GameService {
 
       const game = await Game.findById(gameId);
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       if (statsUpdate.tournaments_hosted !== undefined) {
@@ -278,7 +275,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('Update stats failed', { gameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.UPDATE_STATS_FAILED,
+        'UPDATE_STATS_FAILED',
         error.message || 'Failed to update game statistics'
       );
     }
@@ -297,7 +294,7 @@ export class GameService {
 
       const game = await Game.findById(gameId).select('in_game_id_config');
       if (!game) {
-        throw new AppError(GAME_ERROR_CODES.NOT_FOUND, 'Game not found');
+        throw new AppError('NOT_FOUND', 'Game not found');
       }
 
       const config = game.in_game_id_config;
@@ -335,7 +332,7 @@ export class GameService {
       if (error instanceof AppError) throw error;
       logger.error('In-game ID validation failed', { gameId, inGameId, error: error.message });
       throw new AppError(
-        GAME_ERROR_CODES.VALIDATION_FAILED,
+        'OPEN_VALIDATION_FAILED',
         error.message || 'Failed to validate in-game ID'
       );
     }

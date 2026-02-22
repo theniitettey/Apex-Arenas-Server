@@ -10,18 +10,499 @@ validateSchedule(schedule) - Dates are logical
 
 // file: tournament.validation.service.ts
 
-import mongoose from 'mongoose';
-import { Tournament, IApexTournament } from '../../models/tournaments.model';
-import { Registration } from '../../models/registrations.models';
-import { User } from '../../models/user.model';
-import { Game } from '../../models/games.model';
+import {
+  Tournament,
+  Registration,
+  User,
+  Game,
+  type IApexTournament,
+} from '../../../models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { TOURNAMENT_ERROR_CODES } from '../../../shared/constants/error-codes';
+import { ERROR_CODES } from '../../../shared/constants/error-codes';
 
 const logger = createLogger('tournament-validation-service');
 
+// Define valid tournament types and formats
+const VALID_TOURNAMENT_TYPES = ['single_elimination', 'double_elimination', 'round_robin', 'swiss', 'battle_royale'];
+const VALID_FORMATS = ['1v1', '2v2', '3v3', '4v4', '5v5', 'squad', 'solo'];
+const VALID_VISIBILITIES = ['public', 'private', 'invite_only'];
+
 export class TournamentValidationService {
+  // ============================================
+  // CREATE VALIDATION (Input validation for new tournaments)
+  // ============================================
+  async validateCreate(data: any): Promise<any> {
+    try {
+      logger.info('Validating tournament create data');
+
+      const errors: string[] = [];
+
+      // 1. Required fields
+      if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
+        errors.push('Title is required');
+      } else if (data.title.length > 100) {
+        errors.push('Title must be 100 characters or less');
+      }
+
+      if (!data.game_id) {
+        errors.push('Game ID is required');
+      } else {
+        // Verify game exists and is active
+        const game = await Game.findById(data.game_id);
+        if (!game) {
+          errors.push('Game not found');
+        } else if (!game.is_active) {
+          errors.push('Selected game is not currently active');
+        }
+      }
+
+      // 2. Tournament type validation
+      if (!data.tournament_type) {
+        errors.push('Tournament type is required');
+      } else if (!VALID_TOURNAMENT_TYPES.includes(data.tournament_type)) {
+        errors.push(`Invalid tournament type. Valid options: ${VALID_TOURNAMENT_TYPES.join(', ')}`);
+      }
+
+      // 3. Format validation
+      if (!data.format) {
+        errors.push('Format is required');
+      } else if (!VALID_FORMATS.includes(data.format)) {
+        errors.push(`Invalid format. Valid options: ${VALID_FORMATS.join(', ')}`);
+      }
+
+      // 4. Schedule validation
+      if (!data.schedule) {
+        errors.push('Schedule is required');
+      } else {
+        if (!data.schedule.registration_start) {
+          errors.push('Registration start date is required');
+        }
+        if (!data.schedule.registration_end) {
+          errors.push('Registration end date is required');
+        }
+        if (!data.schedule.tournament_start) {
+          errors.push('Tournament start date is required');
+        }
+
+        // Validate schedule logic if all dates provided
+        if (data.schedule.registration_start && data.schedule.registration_end && data.schedule.tournament_start) {
+          try {
+            this.validateSchedule(data.schedule);
+          } catch (scheduleError: any) {
+            errors.push(scheduleError.message);
+          }
+        }
+      }
+
+      // 5. Capacity validation
+      if (!data.capacity) {
+        errors.push('Capacity configuration is required');
+      } else {
+        if (!data.capacity.max_participants || data.capacity.max_participants < 2) {
+          errors.push('Maximum participants must be at least 2');
+        }
+        if (data.capacity.min_participants !== undefined && data.capacity.min_participants < 2) {
+          errors.push('Minimum participants must be at least 2');
+        }
+        if (data.capacity.min_participants > data.capacity.max_participants) {
+          errors.push('Minimum participants cannot exceed maximum participants');
+        }
+      }
+
+      // 6. Entry fee validation
+      if (data.entry_fee !== undefined) {
+        if (typeof data.entry_fee !== 'number' || data.entry_fee < 0) {
+          errors.push('Entry fee must be a non-negative number');
+        }
+      }
+
+      // 7. Prize structure validation (required for paid tournaments)
+      if (data.entry_fee > 0 || (data.prize_structure?.organizer_gross_deposit > 0)) {
+        if (!data.prize_structure) {
+          errors.push('Prize structure is required for paid tournaments');
+        } else {
+          if (!data.prize_structure.organizer_gross_deposit || data.prize_structure.organizer_gross_deposit <= 0) {
+            errors.push('Organizer gross deposit is required for paid tournaments');
+          }
+          if (!data.prize_structure.distribution || data.prize_structure.distribution.length === 0) {
+            errors.push('Prize distribution is required for paid tournaments');
+          } else {
+            try {
+              this.validatePrizeDistribution(data.prize_structure.distribution);
+            } catch (prizeError: any) {
+              errors.push(prizeError.message);
+            }
+          }
+        }
+      }
+
+      // 8. Visibility validation
+      if (data.visibility && !VALID_VISIBILITIES.includes(data.visibility)) {
+        errors.push(`Invalid visibility. Valid options: ${VALID_VISIBILITIES.join(', ')}`);
+      }
+
+      // 9. Description length validation
+      if (data.description && data.description.length > 2000) {
+        errors.push('Description must be 2000 characters or less');
+      }
+
+      // 10. Rules validation
+      if (data.rules) {
+        if (data.rules.description && data.rules.description.length > 5000) {
+          errors.push('Rules description must be 5000 characters or less');
+        }
+      }
+
+      // 11. Requirements validation
+      if (data.requirements) {
+        if (data.requirements.min_age !== undefined && (data.requirements.min_age < 0 || data.requirements.min_age > 100)) {
+          errors.push('Minimum age must be between 0 and 100');
+        }
+        if (data.requirements.max_age !== undefined && (data.requirements.max_age < 0 || data.requirements.max_age > 100)) {
+          errors.push('Maximum age must be between 0 and 100');
+        }
+        if (data.requirements.min_age && data.requirements.max_age && data.requirements.min_age > data.requirements.max_age) {
+          errors.push('Minimum age cannot exceed maximum age');
+        }
+        if (data.requirements.team_size !== undefined) {
+          if (data.requirements.team_size < 1 || data.requirements.team_size > 100) {
+            errors.push('Team size must be between 1 and 100');
+          }
+        }
+      }
+
+      // Throw if errors exist
+      if (errors.length > 0) {
+        throw new AppError(ERROR_CODES.VALIDATION_ERROR, errors.join('; '));
+      }
+
+      // Return sanitized/validated data
+      const validated = {
+        title: data.title.trim(),
+        description: data.description?.trim() || '',
+        game_id: data.game_id,
+        tournament_type: data.tournament_type,
+        format: data.format,
+        schedule: {
+          registration_start: new Date(data.schedule.registration_start),
+          registration_end: new Date(data.schedule.registration_end),
+          tournament_start: new Date(data.schedule.tournament_start),
+          tournament_end: data.schedule.tournament_end ? new Date(data.schedule.tournament_end) : undefined,
+          check_in_start: data.schedule.check_in_start ? new Date(data.schedule.check_in_start) : undefined,
+          check_in_end: data.schedule.check_in_end ? new Date(data.schedule.check_in_end) : undefined,
+        },
+        capacity: {
+          min_participants: data.capacity.min_participants || 2,
+          max_participants: data.capacity.max_participants,
+          waitlist_enabled: data.capacity.waitlist_enabled || false,
+        },
+        entry_fee: data.entry_fee || 0,
+        currency: data.currency || 'GHS',
+        prize_structure: data.prize_structure || undefined,
+        rules: data.rules || {},
+        visibility: data.visibility || 'public',
+        region: data.region || 'GH',
+        thumbnail_url: data.thumbnail_url || '',
+        banner_url: data.banner_url || '',
+        communication: data.communication || {},
+        requirements: data.requirements || {},
+        timezone: data.timezone || 'Africa/Accra',
+      };
+
+      logger.info('Tournament create validation passed');
+      return validated;
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      logger.error('Tournament create validation failed', { error: error.message });
+      throw new AppError(ERROR_CODES.VALIDATION_ERROR, error.message || 'Create validation failed');
+    }
+  }
+
+  // ============================================
+  // UPDATE VALIDATION (Input validation for updates)
+  // ============================================
+  async validateUpdate(updates: any): Promise<any> {
+    try {
+      logger.info('Validating tournament update data');
+
+      const errors: string[] = [];
+      const validated: any = {};
+
+      // Validate each field if provided
+      if (updates.title !== undefined) {
+        if (typeof updates.title !== 'string' || updates.title.trim().length === 0) {
+          errors.push('Title cannot be empty');
+        } else if (updates.title.length > 100) {
+          errors.push('Title must be 100 characters or less');
+        } else {
+          validated.title = updates.title.trim();
+        }
+      }
+
+      if (updates.description !== undefined) {
+        if (updates.description.length > 2000) {
+          errors.push('Description must be 2000 characters or less');
+        } else {
+          validated.description = updates.description.trim();
+        }
+      }
+
+      if (updates.game_id !== undefined) {
+        const game = await Game.findById(updates.game_id);
+        if (!game) {
+          errors.push('Game not found');
+        } else if (!game.is_active) {
+          errors.push('Selected game is not currently active');
+        } else {
+          validated.game_id = updates.game_id;
+        }
+      }
+
+      if (updates.tournament_type !== undefined) {
+        if (!VALID_TOURNAMENT_TYPES.includes(updates.tournament_type)) {
+          errors.push(`Invalid tournament type. Valid options: ${VALID_TOURNAMENT_TYPES.join(', ')}`);
+        } else {
+          validated.tournament_type = updates.tournament_type;
+        }
+      }
+
+      if (updates.format !== undefined) {
+        if (!VALID_FORMATS.includes(updates.format)) {
+          errors.push(`Invalid format. Valid options: ${VALID_FORMATS.join(', ')}`);
+        } else {
+          validated.format = updates.format;
+        }
+      }
+
+      if (updates.schedule !== undefined) {
+        validated.schedule = {};
+        if (updates.schedule.registration_start) {
+          validated.schedule.registration_start = new Date(updates.schedule.registration_start);
+        }
+        if (updates.schedule.registration_end) {
+          validated.schedule.registration_end = new Date(updates.schedule.registration_end);
+        }
+        if (updates.schedule.tournament_start) {
+          validated.schedule.tournament_start = new Date(updates.schedule.tournament_start);
+        }
+        if (updates.schedule.tournament_end) {
+          validated.schedule.tournament_end = new Date(updates.schedule.tournament_end);
+        }
+        if (updates.schedule.check_in_start) {
+          validated.schedule.check_in_start = new Date(updates.schedule.check_in_start);
+        }
+        if (updates.schedule.check_in_end) {
+          validated.schedule.check_in_end = new Date(updates.schedule.check_in_end);
+        }
+      }
+
+      if (updates.capacity !== undefined) {
+        validated.capacity = {};
+        if (updates.capacity.max_participants !== undefined) {
+          if (updates.capacity.max_participants < 2) {
+            errors.push('Maximum participants must be at least 2');
+          } else {
+            validated.capacity.max_participants = updates.capacity.max_participants;
+          }
+        }
+        if (updates.capacity.min_participants !== undefined) {
+          if (updates.capacity.min_participants < 2) {
+            errors.push('Minimum participants must be at least 2');
+          } else {
+            validated.capacity.min_participants = updates.capacity.min_participants;
+          }
+        }
+        if (updates.capacity.waitlist_enabled !== undefined) {
+          validated.capacity.waitlist_enabled = updates.capacity.waitlist_enabled;
+        }
+      }
+
+      if (updates.entry_fee !== undefined) {
+        if (typeof updates.entry_fee !== 'number' || updates.entry_fee < 0) {
+          errors.push('Entry fee must be a non-negative number');
+        } else {
+          validated.entry_fee = updates.entry_fee;
+        }
+      }
+
+      if (updates.prize_structure !== undefined) {
+        validated.prize_structure = updates.prize_structure;
+        if (updates.prize_structure.distribution) {
+          try {
+            this.validatePrizeDistribution(updates.prize_structure.distribution);
+          } catch (prizeError: any) {
+            errors.push(prizeError.message);
+          }
+        }
+      }
+
+      if (updates.visibility !== undefined) {
+        if (!VALID_VISIBILITIES.includes(updates.visibility)) {
+          errors.push(`Invalid visibility. Valid options: ${VALID_VISIBILITIES.join(', ')}`);
+        } else {
+          validated.visibility = updates.visibility;
+        }
+      }
+
+      if (updates.rules !== undefined) {
+        validated.rules = updates.rules;
+      }
+
+      if (updates.communication !== undefined) {
+        validated.communication = updates.communication;
+      }
+
+      if (updates.requirements !== undefined) {
+        validated.requirements = updates.requirements;
+      }
+
+      if (updates.thumbnail_url !== undefined) {
+        validated.thumbnail_url = updates.thumbnail_url;
+      }
+
+      if (updates.banner_url !== undefined) {
+        validated.banner_url = updates.banner_url;
+      }
+
+      if (updates.region !== undefined) {
+        validated.region = updates.region;
+      }
+
+      if (updates.timezone !== undefined) {
+        validated.timezone = updates.timezone;
+      }
+
+      // Throw if errors exist
+      if (errors.length > 0) {
+        throw new AppError(ERROR_CODES.VALIDATION_ERROR, errors.join('; '));
+      }
+
+      logger.info('Tournament update validation passed');
+      return validated;
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      logger.error('Tournament update validation failed', { error: error.message });
+      throw new AppError(ERROR_CODES.VALIDATION_ERROR, error.message || 'Update validation failed');
+    }
+  }
+
+  // ============================================
+  // PUBLISH VALIDATION (Enhanced)
+  // ============================================
+  async validatePublish(tournament: IApexTournament): Promise<void> {
+    try {
+      logger.info('Validating tournament for publish', { tournamentId: tournament._id });
+
+      const errors: string[] = [];
+
+      // 1. Status check
+      if (tournament.status !== 'draft') {
+        throw new AppError(
+          ERROR_CODES.INVALID_STATUS,
+          `Only draft tournaments can be published, current: ${tournament.status}`
+        );
+      }
+
+      // 2. Required fields check
+      if (!tournament.title || tournament.title.trim().length === 0) {
+        errors.push('Title is required');
+      }
+
+      if (!tournament.game_id) {
+        errors.push('Game must be selected');
+      }
+
+      if (!tournament.tournament_type) {
+        errors.push('Tournament type is required');
+      }
+
+      if (!tournament.format) {
+        errors.push('Format is required');
+      }
+
+      // 3. Schedule validation
+      const now = new Date();
+      if (!tournament.schedule.registration_start) {
+        errors.push('Registration start date is required');
+      } else if (tournament.schedule.registration_start <= now) {
+        errors.push('Registration start must be in the future');
+      }
+
+      if (!tournament.schedule.registration_end) {
+        errors.push('Registration end date is required');
+      }
+
+      if (!tournament.schedule.tournament_start) {
+        errors.push('Tournament start date is required');
+      }
+
+      // Validate full schedule if all dates present
+      if (tournament.schedule.registration_start && tournament.schedule.registration_end && tournament.schedule.tournament_start) {
+        try {
+          this.validateSchedule(tournament.schedule);
+        } catch (scheduleError: any) {
+          errors.push(scheduleError.message);
+        }
+      }
+
+      // 4. Capacity validation
+      if (!tournament.capacity.max_participants || tournament.capacity.max_participants < 2) {
+        errors.push('Maximum participants must be at least 2');
+      }
+
+      if (tournament.capacity.min_participants <= 0) {
+        errors.push('Minimum participants must be greater than 0');
+      }
+
+      // 5. Prize structure validation for paid tournaments
+      if (!tournament.is_free && tournament.entry_fee > 0) {
+        if (!tournament.prize_structure?.distribution?.length) {
+          errors.push('Prize distribution must be defined for paid tournaments');
+        } else {
+          try {
+            this.validatePrizeDistribution(tournament.prize_structure.distribution);
+          } catch (prizeError: any) {
+            errors.push(prizeError.message);
+          }
+        }
+
+        if (!tournament.prize_structure?.organizer_gross_deposit || tournament.prize_structure.organizer_gross_deposit <= 0) {
+          errors.push('Organizer deposit amount is required for paid tournaments');
+        }
+      }
+
+      // 6. Game validation
+      const game = await Game.findById(tournament.game_id);
+      if (!game) {
+        errors.push('Selected game not found');
+      } else if (!game.is_active) {
+        errors.push('Selected game is not currently active');
+      }
+
+      // 7. Team tournament validation
+      if (tournament.format !== '1v1' && tournament.format !== 'solo') {
+        if (!tournament.requirements?.team_size) {
+          errors.push('Team size must be specified for team tournaments');
+        }
+      }
+
+      // Throw if errors exist
+      if (errors.length > 0) {
+        throw new AppError(ERROR_CODES.PUBLISH_VALIDATION_FAILED, errors.join('; '));
+      }
+
+      logger.info('Publish validation passed', { tournamentId: tournament._id });
+    } catch (error: any) {
+      if (error instanceof AppError) throw error;
+      logger.error('Publish validation failed', { tournamentId: tournament._id, error: error.message });
+      throw new AppError(
+        ERROR_CODES.PUBLISH_VALIDATION_FAILED,
+        error.message || 'Publish validation failed'
+      );
+    }
+  }
+
   // ============================================
   // REGISTRATION VALIDATION
   // ============================================
@@ -32,13 +513,13 @@ export class TournamentValidationService {
       // 1. Fetch tournament
       const tournament = await Tournament.findById(tournamentId);
       if (!tournament) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.NOT_FOUND, 'Tournament not found');
+        throw new AppError(ERROR_CODES.NOT_FOUND, 'Tournament not found');
       }
 
       // 2. Status check – only 'open' allows registration
       if (tournament.status !== 'open') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.REGISTRATION_CLOSED,
+          ERROR_CODES.REGISTRATION_CLOSED,
           `Registration is only allowed when tournament is open, current status: ${tournament.status}`
         );
       }
@@ -47,13 +528,13 @@ export class TournamentValidationService {
       const now = new Date();
       if (now < tournament.schedule.registration_start) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.REGISTRATION_NOT_STARTED,
+          ERROR_CODES.REGISTRATION_NOT_STARTED,
           'Registration has not started yet'
         );
       }
       if (now > tournament.schedule.registration_end) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.REGISTRATION_ENDED,
+          ERROR_CODES.REGISTRATION_ENDED,
           'Registration window has ended'
         );
       }
@@ -66,7 +547,7 @@ export class TournamentValidationService {
       if (currentParticipants >= maxParticipants) {
         if (!waitlistEnabled) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.TOURNAMENT_FULL,
+            ERROR_CODES.TOURNAMENT_FULL,
             'Tournament is full and waitlist is disabled'
           );
         }
@@ -84,7 +565,7 @@ export class TournamentValidationService {
 
       if (existingRegistration) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.ALREADY_REGISTERED,
+          ERROR_CODES.ALREADY_REGISTERED,
           'User is already registered for this tournament'
         );
       }
@@ -92,27 +573,27 @@ export class TournamentValidationService {
       // 6. User eligibility checks (age, region, skill level)
       const user = await User.findById(userId);
       if (!user) {
-        throw new AppError(TOURNAMENT_ERROR_CODES.USER_NOT_FOUND, 'User not found');
+        throw new AppError(ERROR_CODES.USER_NOT_FOUND, 'User not found');
       }
 
       // Age verification
       if (tournament.requirements?.min_age || tournament.requirements?.max_age) {
         if (!user.profile?.date_of_birth) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.USER_PROFILE_INCOMPLETE,
+            ERROR_CODES.USER_PROFILE_INCOMPLETE,
             'Date of birth is required for age verification'
           );
         }
         const age = this.calculateAge(user.profile.date_of_birth);
         if (tournament.requirements.min_age && age < tournament.requirements.min_age) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.AGE_RESTRICTION,
+            ERROR_CODES.AGE_RESTRICTION,
             `Minimum age requirement: ${tournament.requirements.min_age}`
           );
         }
         if (tournament.requirements.max_age && age > tournament.requirements.max_age) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.AGE_RESTRICTION,
+            ERROR_CODES.AGE_RESTRICTION,
             `Maximum age requirement: ${tournament.requirements.max_age}`
           );
         }
@@ -126,7 +607,7 @@ export class TournamentValidationService {
         const userCountry = user.profile?.country;
         if (!userCountry || !tournament.requirements.allowed_regions.includes(userCountry)) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.REGION_RESTRICTION,
+            ERROR_CODES.REGION_RESTRICTION,
             `Your region (${userCountry}) is not allowed for this tournament`
           );
         }
@@ -143,7 +624,7 @@ export class TournamentValidationService {
         );
         if (!gameProfile) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.GAME_PROFILE_REQUIRED,
+            ERROR_CODES.GAME_PROFILE_REQUIRED,
             'You must create a game profile for this game before registering'
           );
         }
@@ -151,7 +632,7 @@ export class TournamentValidationService {
           !tournament.requirements.required_skill_levels.includes(gameProfile.skill_level || '')
         ) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.SKILL_LEVEL_RESTRICTION,
+            ERROR_CODES.SKILL_LEVEL_RESTRICTION,
             `Your skill level (${gameProfile.skill_level}) does not meet tournament requirements`
           );
         }
@@ -164,13 +645,13 @@ export class TournamentValidationService {
         );
         if (!gameProfile) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.GAME_PROFILE_REQUIRED,
+            ERROR_CODES.GAME_PROFILE_REQUIRED,
             'In-game ID is required for this tournament'
           );
         }
         if (!gameProfile.in_game_id) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.IN_GAME_ID_MISSING,
+            ERROR_CODES.IN_GAME_ID_MISSING,
             'In-game ID is not set in your profile for this game'
           );
         }
@@ -180,7 +661,7 @@ export class TournamentValidationService {
           const regex = new RegExp(game.in_game_id_config.format);
           if (!regex.test(gameProfile.in_game_id)) {
             throw new AppError(
-              TOURNAMENT_ERROR_CODES.IN_GAME_ID_INVALID,
+              ERROR_CODES.IN_GAME_ID_INVALID,
               `In-game ID format should match: ${game.in_game_id_config.format_description || game.in_game_id_config.format}`
             );
           }
@@ -194,7 +675,7 @@ export class TournamentValidationService {
         // This part is better placed in registration service, but we can do a basic check:
         if (!tournament.requirements?.team_size) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.TEAM_SIZE_NOT_DEFINED,
+            ERROR_CODES.TEAM_SIZE_NOT_DEFINED,
             'Tournament organizer did not specify team size'
           );
         }
@@ -208,7 +689,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Registration validation failed', { tournamentId, userId, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.REGISTRATION_VALIDATION_FAILED,
+        ERROR_CODES.REGISTRATION_VALIDATION_FAILED,
         error.message || 'Registration validation failed'
       );
     }
@@ -225,7 +706,7 @@ export class TournamentValidationService {
       const nonCancellableStatuses = ['completed', 'cancelled', 'verifying_results', 'distributing_prizes'];
       if (nonCancellableStatuses.includes(tournament.status)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          ERROR_CODES.INVALID_STATUS,
           `Cannot cancel tournament with status: ${tournament.status}`
         );
       }
@@ -234,7 +715,7 @@ export class TournamentValidationService {
       const now = new Date();
       if (tournament.schedule.cancellation_cutoff && now > tournament.schedule.cancellation_cutoff) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.CANCELLATION_WINDOW_CLOSED,
+          ERROR_CODES.CANCELLATION_WINDOW_CLOSED,
           'Cancellation window has closed (24 hours before tournament start)'
         );
       }
@@ -256,7 +737,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Cancellation validation failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CANCELLATION_VALIDATION_FAILED,
+        ERROR_CODES.CANCELLATION_VALIDATION_FAILED,
         error.message || 'Cancellation validation failed'
       );
     }
@@ -303,7 +784,7 @@ export class TournamentValidationService {
 
       if (forbiddenUpdates.length > 0) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.UPDATE_NOT_ALLOWED,
+          ERROR_CODES.UPDATE_NOT_ALLOWED,
           `Fields cannot be updated in status ${tournament.status}: ${forbiddenUpdates.join(', ')}`
         );
       }
@@ -318,7 +799,7 @@ export class TournamentValidationService {
         // Cannot reduce max participants below current registrations
         if (updates.capacity.max_participants < tournament.capacity.current_participants) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.CAPACITY_TOO_LOW,
+            ERROR_CODES.CAPACITY_TOO_LOW,
             `Cannot reduce max participants below current registrations (${tournament.capacity.current_participants})`
           );
         }
@@ -329,7 +810,7 @@ export class TournamentValidationService {
         if (tournament.status !== 'draft' && tournament.status !== 'awaiting_deposit') {
           if (tournament.entry_fee !== updates.entry_fee) {
             throw new AppError(
-              TOURNAMENT_ERROR_CODES.ENTRY_FEE_CHANGE_NOT_ALLOWED,
+              ERROR_CODES.ENTRY_FEE_CHANGE_NOT_ALLOWED,
               'Entry fee cannot be changed after tournament is open'
             );
           }
@@ -341,7 +822,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Update validation failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.UPDATE_VALIDATION_FAILED,
+        ERROR_CODES.UPDATE_VALIDATION_FAILED,
         error.message || 'Update validation failed'
       );
     }
@@ -357,7 +838,7 @@ export class TournamentValidationService {
       // 1. Status must be 'open' or 'locked'
       if (!['open', 'locked'].includes(tournament.status)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          ERROR_CODES.INVALID_STATUS,
           `Check-in can only be started when tournament is open or locked, current: ${tournament.status}`
         );
       }
@@ -365,7 +846,7 @@ export class TournamentValidationService {
       // 2. Check-in window must be defined
       if (!tournament.schedule.check_in_start || !tournament.schedule.check_in_end) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.CHECK_IN_WINDOW_NOT_DEFINED,
+          ERROR_CODES.CHECK_IN_WINDOW_NOT_DEFINED,
           'Check-in start and end times must be defined'
         );
       }
@@ -374,13 +855,13 @@ export class TournamentValidationService {
       const now = new Date();
       if (now < tournament.schedule.check_in_start) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.CHECK_IN_NOT_STARTED,
+          ERROR_CODES.CHECK_IN_NOT_STARTED,
           'Check-in has not started yet'
         );
       }
       if (now > tournament.schedule.check_in_end) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.CHECK_IN_ENDED,
+          ERROR_CODES.CHECK_IN_ENDED,
           'Check-in window has ended'
         );
       }
@@ -388,7 +869,7 @@ export class TournamentValidationService {
       // 4. Minimum participants check (optional, but good practice)
       if (tournament.capacity.current_participants < tournament.capacity.min_participants) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INSUFFICIENT_PARTICIPANTS,
+          ERROR_CODES.INSUFFICIENT_PARTICIPANTS,
           `Cannot start check-in: minimum participants required: ${tournament.capacity.min_participants}, current: ${tournament.capacity.current_participants}`
         );
       }
@@ -398,7 +879,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Check-in validation failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.CHECK_IN_VALIDATION_FAILED,
+        ERROR_CODES.CHECK_IN_VALIDATION_FAILED,
         error.message || 'Check-in validation failed'
       );
     }
@@ -414,7 +895,7 @@ export class TournamentValidationService {
       // 1. Status must be 'ready_to_start' or 'ongoing' (if regenerating)
       if (!['ready_to_start', 'ongoing'].includes(tournament.status)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          ERROR_CODES.INVALID_STATUS,
           `Bracket can only be generated when tournament is ready_to_start or ongoing, current: ${tournament.status}`
         );
       }
@@ -422,7 +903,7 @@ export class TournamentValidationService {
       // 2. Bracket not already generated (unless regeneration is explicitly allowed)
       if (tournament.bracket?.generated && tournament.status === 'ready_to_start') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.BRACKET_ALREADY_GENERATED,
+          ERROR_CODES.BRACKET_ALREADY_GENERATED,
           'Bracket has already been generated for this tournament'
         );
       }
@@ -430,7 +911,7 @@ export class TournamentValidationService {
       // 3. Sufficient participants
       if (tournament.capacity.current_participants < tournament.capacity.min_participants) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INSUFFICIENT_PARTICIPANTS,
+          ERROR_CODES.INSUFFICIENT_PARTICIPANTS,
           `Cannot generate bracket: minimum participants required: ${tournament.capacity.min_participants}, current: ${tournament.capacity.current_participants}`
         );
       }
@@ -445,7 +926,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Bracket generation validation failed', { tournamentId: tournament._id, error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.BRACKET_GENERATION_VALIDATION_FAILED,
+        ERROR_CODES.BRACKET_GENERATION_VALIDATION_FAILED,
         error.message || 'Bracket generation validation failed'
       );
     }
@@ -462,7 +943,7 @@ export class TournamentValidationService {
 
       if (!distribution || distribution.length === 0) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.PRIZE_DISTRIBUTION_EMPTY,
+          ERROR_CODES.PRIZE_DISTRIBUTION_EMPTY,
           'Prize distribution cannot be empty'
         );
       }
@@ -471,13 +952,13 @@ export class TournamentValidationService {
       const positions = distribution.map((d) => d.position);
       if (new Set(positions).size !== distribution.length) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.PRIZE_POSITIONS_DUPLICATE,
+          ERROR_CODES.PRIZE_POSITIONS_DUPLICATE,
           'Prize positions must be unique'
         );
       }
       if (positions.some((p) => !Number.isInteger(p) || p <= 0)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.PRIZE_POSITIONS_INVALID,
+          ERROR_CODES.PRIZE_POSITIONS_INVALID,
           'Prize positions must be positive integers'
         );
       }
@@ -486,7 +967,7 @@ export class TournamentValidationService {
       const totalPercentage = distribution.reduce((sum, d) => sum + d.percentage, 0);
       if (Math.abs(totalPercentage - 100) > 0.01) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.PRIZE_PERCENTAGE_SUM,
+          ERROR_CODES.PRIZE_PERCENTAGE_SUM,
           `Prize percentages must sum to 100%, current sum: ${totalPercentage}%`
         );
       }
@@ -494,7 +975,7 @@ export class TournamentValidationService {
       // 3. Percentages must be positive numbers
       if (distribution.some((d) => d.percentage <= 0 || d.percentage > 100)) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.PRIZE_PERCENTAGE_INVALID,
+          ERROR_CODES.PRIZE_PERCENTAGE_INVALID,
           'Prize percentages must be between 0 and 100'
         );
       }
@@ -504,7 +985,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Prize distribution validation failed', { error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.PRIZE_DISTRIBUTION_VALIDATION_FAILED,
+        ERROR_CODES.PRIZE_DISTRIBUTION_VALIDATION_FAILED,
         error.message || 'Prize distribution validation failed'
       );
     }
@@ -522,7 +1003,7 @@ export class TournamentValidationService {
       // 1. Required dates
       if (!schedule.registration_start || !schedule.registration_end || !schedule.tournament_start) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.SCHEDULE_INCOMPLETE,
+          ERROR_CODES.SCHEDULE_INCOMPLETE,
           'Registration start, registration end, and tournament start are required'
         );
       }
@@ -535,19 +1016,19 @@ export class TournamentValidationService {
       // 2. Chronological order
       if (regStart >= regEnd) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+          ERROR_CODES.SCHEDULE_INVALID_ORDER,
           'Registration start must be before registration end'
         );
       }
       if (regEnd >= tournamentStart) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+          ERROR_CODES.SCHEDULE_INVALID_ORDER,
           'Registration end must be before tournament start'
         );
       }
       if (tournamentEnd && tournamentStart >= tournamentEnd) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+          ERROR_CODES.SCHEDULE_INVALID_ORDER,
           'Tournament start must be before tournament end'
         );
       }
@@ -564,13 +1045,13 @@ export class TournamentValidationService {
         const checkInEnd = new Date(schedule.check_in_end);
         if (checkInStart >= checkInEnd) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+            ERROR_CODES.SCHEDULE_INVALID_ORDER,
             'Check-in start must be before check-in end'
           );
         }
         if (checkInStart >= tournamentStart) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+            ERROR_CODES.SCHEDULE_INVALID_ORDER,
             'Check-in start must be before tournament start'
           );
         }
@@ -578,7 +1059,7 @@ export class TournamentValidationService {
           // Check-in can end exactly at tournament start or before
           if (checkInEnd.getTime() !== tournamentStart.getTime()) {
             throw new AppError(
-              TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+              ERROR_CODES.SCHEDULE_INVALID_ORDER,
               'Check-in end must be on or before tournament start'
             );
           }
@@ -590,7 +1071,7 @@ export class TournamentValidationService {
         const cutoff = new Date(schedule.cancellation_cutoff);
         if (cutoff >= tournamentStart) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+            ERROR_CODES.SCHEDULE_INVALID_ORDER,
             'Cancellation cutoff must be before tournament start'
           );
         }
@@ -601,7 +1082,7 @@ export class TournamentValidationService {
         const feeTime = new Date(schedule.fee_deduction_time);
         if (feeTime >= tournamentStart) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.SCHEDULE_INVALID_ORDER,
+            ERROR_CODES.SCHEDULE_INVALID_ORDER,
             'Fee deduction time must be before tournament start'
           );
         }
@@ -612,7 +1093,7 @@ export class TournamentValidationService {
       if (error instanceof AppError) throw error;
       logger.error('Schedule validation failed', { error: error.message });
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.SCHEDULE_VALIDATION_FAILED,
+        ERROR_CODES.SCHEDULE_VALIDATION_FAILED,
         error.message || 'Schedule validation failed'
       );
     }
@@ -637,7 +1118,7 @@ export class TournamentValidationService {
     try {
       if (tournament.status !== 'draft') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          ERROR_CODES.INVALID_STATUS,
           `Only draft tournaments can be published, current: ${tournament.status}`
         );
       }
@@ -646,7 +1127,7 @@ export class TournamentValidationService {
       const now = new Date();
       if (tournament.schedule.registration_start <= now) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.SCHEDULE_PAST,
+          ERROR_CODES.SCHEDULE_PAST,
           'Registration start must be in the future'
         );
       }
@@ -655,7 +1136,7 @@ export class TournamentValidationService {
       if (!tournament.is_free && tournament.entry_fee > 0) {
         if (!tournament.prize_structure?.distribution?.length) {
           throw new AppError(
-            TOURNAMENT_ERROR_CODES.PRIZE_DISTRIBUTION_REQUIRED,
+            ERROR_CODES.PRIZE_DISTRIBUTION_REQUIRED,
             'Prize distribution must be defined for paid tournaments'
           );
         }
@@ -665,7 +1146,7 @@ export class TournamentValidationService {
       // Ensure at least minimum participants > 0
       if (tournament.capacity.min_participants <= 0) {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_MIN_PARTICIPANTS,
+          ERROR_CODES.INVALID_MIN_PARTICIPANTS,
           'Minimum participants must be greater than 0'
         );
       }
@@ -674,7 +1155,7 @@ export class TournamentValidationService {
     } catch (error: any) {
       if (error instanceof AppError) throw error;
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.PUBLISH_VALIDATION_FAILED,
+        ERROR_CODES.PUBLISH_VALIDATION_FAILED,
         error.message || 'Publish validation failed'
       );
     }
@@ -685,7 +1166,7 @@ export class TournamentValidationService {
     try {
       if (tournament.status !== 'awaiting_deposit') {
         throw new AppError(
-          TOURNAMENT_ERROR_CODES.INVALID_STATUS,
+          ERROR_CODES.INVALID_STATUS,
           `Cannot open tournament from status: ${tournament.status}`
         );
       }
@@ -715,7 +1196,7 @@ export class TournamentValidationService {
     } catch (error: any) {
       if (error instanceof AppError) throw error;
       throw new AppError(
-        TOURNAMENT_ERROR_CODES.OPEN_VALIDATION_FAILED,
+        ERROR_CODES.OPEN_VALIDATION_FAILED,
         error.message || 'Open validation failed'
       );
     }
