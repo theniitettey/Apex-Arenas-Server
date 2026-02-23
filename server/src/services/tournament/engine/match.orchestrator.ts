@@ -16,7 +16,7 @@ import { Tournament } from '../../../models/tournaments.model';
 import { Registration } from '../../../models/registrations.models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { redisLock, LockKeys } from '../../../shared/utils/redis-lock.util';
+import { redisLock, LockKeys } from '../../../shared/utils/redis-lock.utils';
 import { bracketManager } from './bracket.manager';
 import { notificationHelper } from '../services/notification.helper';
 

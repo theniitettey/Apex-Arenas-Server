@@ -192,7 +192,7 @@ export class TournamentStateMachine {
 
     // Rule: Can only verify results if results have been submitted
     if (to === 'verifying_results') {
-      if (!tournament.results?.winners || tournament.results.winners.length === 0) {
+      if (!tournament.results?.winners || tournament.results.winners.length < 1) {
         return {
           allowed: false,
           reason: 'No results submitted yet'

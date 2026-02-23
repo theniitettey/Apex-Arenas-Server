@@ -1,24 +1,10 @@
-/**
- * ============================================
- * BRACKET MANAGER
- * ============================================
- * Production-ready bracket generation and management
- * Supports: Single Elimination, Double Elimination, Round Robin
- * 
- * Features:
- * - Seeding with byes for non-power-of-2 participants
- * - Automatic match tree generation
- * - Match progression logic
- * - Bracket integrity validation
- */
-
 import mongoose from 'mongoose';
 import { Tournament, IApexTournament } from '../../../models/tournaments.model';
 import { Match, IApexMatch } from '../../../models/matches.model';
 import { Registration, IApexRegistration } from '../../../models/registrations.models';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { AppError } from '../../../shared/utils/error.utils';
-import { redisLock, LockKeys } from '../../../shared/utils/redis-lock.util';
+import { redisLock, LockKeys } from '../../../shared/utils/redis-lock.utils';
 
 const logger = createLogger('bracket-manager');
 
@@ -291,8 +277,7 @@ export class BracketManager {
     }
 
     // Save all matches to database
-    const createdMatches = await Match.insertMany(matches);
-
+    const createdMatches = await Match.insertMany(matches) as unknown as IApexMatch[];
     // Link matches (set next_match_id and previous_match_ids)
     await this.linkSingleEliminationMatches(createdMatches, totalRounds);
 

@@ -10,7 +10,7 @@ import { env } from '../../../configs/env.config';
 import { createLogger } from '../../../shared/utils/logger.utils';
 import { DeviceContext, detectDeviceType } from '../../../shared/utils/request.utils';
 import { AUTH_ERROR_CODES } from '../../../shared/constants/error-codes';
-import { uploadToCloudinary, deleteFromCloudinary } from '../../../configs/cloudinary.config';
+import { uploadToCloudinary, deleteFromCloudinary } from '../../../shared/utils/cloudinary.utils'; 
 
 const logger = createLogger('auth-user-service');
 
@@ -1697,7 +1697,7 @@ export class UserService {
           document_type: doc_type,
           cloudinary_public_id: upload_result.public_id,
           cloudinary_url: upload_result.url,
-          secure_url: upload_result.secure_url,
+          secure_url: upload_result.url,
           file_size: upload_result.bytes,
           format: upload_result.format,
           width: upload_result.width,
@@ -1738,7 +1738,7 @@ export class UserService {
             document_type: doc_type,
             cloudinary_public_id: upload_result.public_id,
             cloudinary_url: upload_result.url,
-            secure_url: upload_result.secure_url,
+            secure_url: upload_result.url,
             file_size: upload_result.bytes,
             format: upload_result.format,
             width: upload_result.width,

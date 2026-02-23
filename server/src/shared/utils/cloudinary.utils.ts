@@ -24,6 +24,7 @@ export interface UploadOptions {
   allowed_formats?: string[];
   max_bytes?: number;
   transformation?: object;
+  public_id?: string;
 }
 
 const DEFAULT_OPTIONS: UploadOptions = {
@@ -46,6 +47,7 @@ export async function uploadToCloudinary(
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: opts.folder,
+        ...(opts.public_id && { public_id: opts.public_id }),
         resource_type: opts.resource_type,
         allowed_formats: opts.allowed_formats,
       },
