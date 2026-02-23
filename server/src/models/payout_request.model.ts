@@ -175,7 +175,6 @@ const ApexPayoutRequestSchema = new Schema<IApexPayoutRequest>({
 });
 
 // Indexes
-ApexPayoutRequestSchema.index({ idempotency_key: 1 }, { unique: true });
 ApexPayoutRequestSchema.index({ user_id: 1 });
 ApexPayoutRequestSchema.index({ status: 1 });
 ApexPayoutRequestSchema.index({ 'source.tournament_id': 1 }, { sparse: true });

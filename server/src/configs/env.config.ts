@@ -146,6 +146,8 @@ export const env = cleanEnv(process.env, {
   EMAIL_ENABLED: bool({ default: true }),
   EMAIL_REPLY_TO: str({ default: 'support@apexarenas.com' }),
 
+  WAITLIST_PAYMENT_WINDOW_MINUTES: num({default: 15}) ,
+
 });
 
 

@@ -2,39 +2,38 @@ import mongoose, {Document, Schema, Model} from "mongoose";
 
 export interface IApexRegistration extends Document {
   _id: mongoose.Types.ObjectId;
-  tournament_id: mongoose.Types.ObjectId; // reference to tournaments
-  user_id: mongoose.Types.ObjectId; // reference to users
-  team_id?: mongoose.Types.ObjectId; // reference to teams (optional - only for team tournaments)
+  tournament_id: mongoose.Types.ObjectId;
+  user_id: mongoose.Types.ObjectId;
+  team_id?: mongoose.Types.ObjectId;
   
-  registration_type: string; // enum: ['solo', 'team']
+  registration_type: string;
   
-  // Player's in-game identifier - CRITICAL for winner verification
-  in_game_id: string; // must match user's game_profiles entry for tournament's game
-  
-  // For team registrations - track all members
-  team_members?: [
-    {
-      user_id: mongoose.Types.ObjectId;
-      in_game_id: string;
-      role: string; // captain, player, substitute
-      confirmed: boolean;
-      confirmed_at?: Date;
-    }
-  ];
+  in_game_id: string;
+  waitlist_position?: number;
+  promoted_from_waitlist?: boolean;
+  promoted_at?: Date;
+  payment_deadline?: Date;  // ← ADD THIS
+
+  team_members?: {
+    user_id: mongoose.Types.ObjectId;
+    in_game_id: string;
+    role: string;
+    confirmed: boolean;
+    confirmed_at?: Date;
+  }[];
   
   payment: {
-    entry_fee_paid: number; // store as pesewas
-    payment_method: string; // enum: ['wallet', 'momo', 'card']
-    transaction_id: mongoose.Types.ObjectId; // reference to transactions
+    entry_fee_paid: number;
+    payment_method: string;
+    transaction_id: mongoose.Types.ObjectId;
     paid_at: Date;
   };
   
-  // Refund tracking
   refund?: {
     requested: boolean;
     requested_at?: Date;
     reason?: string;
-    status: string; // enum: ['pending', 'approved', 'processed', 'denied']
+    status: string;
     amount: number;
     transaction_id?: mongoose.Types.ObjectId;
     processed_at?: Date;
@@ -42,25 +41,23 @@ export interface IApexRegistration extends Document {
     denial_reason?: string;
   };
   
-  status: string; // enum: ['pending_payment', 'registered', 'checked_in', 'disqualified', 'withdrawn', 'cancelled']
+  status: string;
   
   check_in: {
     checked_in: boolean;
     checked_in_at: Date;
-    checked_in_by?: mongoose.Types.ObjectId; // self or team captain
+    checked_in_by?: mongoose.Types.ObjectId;
   };
   
-  seed_number: number; // tournament bracket position
+  seed_number: number;
   
-  // Placement after tournament
-  final_placement?: number; // 1st, 2nd, 3rd, etc.
-  prize_won?: number; // amount won (if any)
+  final_placement?: number;
+  prize_won?: number;
   
-  // Notes
-  notes?: string; // admin notes
+  notes?: string;
   disqualification_reason?: string;
   
-  created_at: Date; // standardized from registered_at
+  created_at: Date;
   updated_at: Date;
   withdrawn_at?: Date;
   withdrawal_reason?: string;
@@ -75,7 +72,11 @@ const ApexRegistrationSchema = new Schema<IApexRegistration>({
   registration_type: { type: String, enum: ['solo', 'team'], required: true },
   
   in_game_id: { type: String, required: true },
-  
+  waitlist_position: { type: Number },
+  promoted_from_waitlist: { type: Boolean, default: false },  // ← Fixed: was Type instead of type
+  promoted_at: { type: Date },  // ← Fixed: was Type instead of type
+  payment_deadline: { type: Date },  // ← ADD THIS
+
   team_members: [{
     user_id: { type: Schema.Types.ObjectId, ref: 'ApexUser', required: true },
     in_game_id: { type: String, required: true },
@@ -140,7 +141,6 @@ ApexRegistrationSchema.index({ tournament_id: 1, in_game_id: 1 }, { unique: true
 ApexRegistrationSchema.index({ tournament_id: 1, team_id: 1 }, { unique: true, sparse: true });
 ApexRegistrationSchema.index({ 'payment.transaction_id': 1 }, { sparse: true });
 ApexRegistrationSchema.index({ 'refund.status': 1 }, { sparse: true });
-
-
+ApexRegistrationSchema.index({ payment_deadline: 1 }, { sparse: true });  // ← ADD INDEX for expiry queries
 
 export const Registration = mongoose.model<IApexRegistration>('ApexRegistration', ApexRegistrationSchema);

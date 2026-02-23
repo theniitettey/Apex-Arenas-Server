@@ -1,0 +1,568 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Apex Arena — Google Auth Test</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --border: #1e1e2e;
+      --accent: #e8ff47;
+      --accent-dim: rgba(232, 255, 71, 0.08);
+      --text: #f0f0f0;
+      --muted: #555570;
+      --success: #47ffb0;
+      --error: #ff4747;
+      --font: 'Syne', sans-serif;
+      --mono: 'DM Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    /* Accent glow blob */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(232,255,71,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 3rem;
+      width: 100%;
+      max-width: 480px;
+      z-index: 1;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: 24px; right: 24px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      border-radius: 100%;
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid rgba(232,255,71,0.2);
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .subtitle {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+
+    /* Mode toggle */
+    .mode-toggle {
+      display: flex;
+      gap: 0;
+      margin-bottom: 2rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 0.5rem;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+
+    .mode-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid rgba(232,255,71,0.2);
+    }
+
+    /* Role selector */
+    .role-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .role-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    .role-options {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .role-option {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .role-option input { display: none; }
+
+    .role-option:has(input:checked) {
+      border-color: rgba(232,255,71,0.4);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .role-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .role-option:has(input:checked) .role-dot {
+      background: var(--accent);
+    }
+
+    /* Google button wrapper */
+    .google-btn-wrapper {
+      width: 100%;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* divider */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Password field (for link mode) */
+    .field {
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .field.visible { display: block; }
+
+    .field label {
+      display: block;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field input:focus {
+      border-color: rgba(232,255,71,0.4);
+    }
+
+    /* Response panel */
+    .response-panel {
+      margin-top: 1.5rem;
+      display: none;
+    }
+
+    .response-panel.visible { display: block; }
+
+    .response-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .status-dot.success { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.error { background: var(--error); box-shadow: 0 0 8px var(--error); }
+
+    .response-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .response-body {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--text);
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    /* Loading state */
+    .loading-bar {
+      height: 2px;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .loading-bar.active {
+      display: block;
+      animation: load 1.5s ease infinite;
+    }
+
+    @keyframes load {
+      0% { width: 0%; opacity: 1; }
+      50% { width: 70%; opacity: 1; }
+      100% { width: 100%; opacity: 0; }
+    }
+
+    .footer-note {
+      margin-top: 1.5rem;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .endpoint-pill {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      color: var(--accent);
+      font-size: 0.6rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="tag">⚡ Auth Test Harness</div>
+  <h1>Sign in with<br/><span>Google</span></h1>
+  <p class="subtitle">
+    Sends Google id_token directly to your backend.<br/>
+    Endpoint → <code style="color:var(--accent)">POST /api/v1/auth/google</code>
+  </p>
+
+  <!-- Mode toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn active" onclick="setMode('auth')" id="btn-auth">SIGN IN / REGISTER</button>
+    <button class="mode-btn" onclick="setMode('link')" id="btn-link">LINK ACCOUNT</button>
+  </div>
+
+  <!-- Role (only for auth mode) -->
+  <div class="role-group" id="role-group">
+    <span class="role-label">Register as</span>
+    <div class="role-options">
+      <label class="role-option">
+        <input type="radio" name="role" value="player" checked/>
+        <span class="role-dot"></span>
+        Player
+      </label>
+      <label class="role-option">
+        <input type="radio" name="role" value="organizer"/>
+        <span class="role-dot"></span>
+        Organizer
+      </label>
+    </div>
+  </div>
+
+  <!-- Password field (link mode only) -->
+  <div class="field" id="password-field">
+    <label>Your existing password</label>
+    <input type="password" id="password-input" placeholder="Enter your account password"/>
+  </div>
+
+  <div class="loading-bar" id="loading-bar"></div>
+
+  <!-- Google Sign In Button -->
+  <div class="google-btn-wrapper">
+    <div id="g_id_onload"
+      data-client_id="741961090257-2jlbfq9ovv99bvcqpu01m4cf04qm0en4.apps.googleusercontent.com"
+
+      data-callback="handleGoogleToken"
+      data-auto_prompt="false">
+    </div>
+    <div id="google-btn-container">
+      <div class="g_id_signin"
+        data-type="standard"
+        data-shape="pill"
+        data-theme="filled_black"
+        data-text="signin_with"
+        data-size="large"
+        data-logo_alignment="left"
+        data-width="360">
+      </div>
+    </div>
+    <!-- Reset button shown after Google button disappears -->
+    <button id="reset-btn" onclick="resetButton()" style="display:none; padding: 0.6rem 1.5rem; background: var(--accent-dim); border: 1px solid rgba(232,255,71,0.3); border-radius: 8px; color: var(--accent); font-family: var(--mono); font-size: 0.75rem; cursor: pointer; letter-spacing: 0.08em;">
+      ↺ TRY AGAIN
+    </button>
+  </div>
+
+  <!-- Response panel -->
+  <div class="response-panel" id="response-panel">
+    <div class="response-header">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="response-label" id="response-label">Response</span>
+    </div>
+    <div class="response-body" id="response-body"></div>
+  </div>
+
+  <p class="footer-note">
+    Token received from Google → sent to<br/>
+    <span class="endpoint-pill">localhost:5000</span> → response shown above
+  </p>
+</div>
+
+<script>
+  let currentMode = 'auth';
+
+  function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('btn-auth').classList.toggle('active', mode === 'auth');
+    document.getElementById('btn-link').classList.toggle('active', mode === 'link');
+    document.getElementById('role-group').style.display = mode === 'auth' ? 'block' : 'none';
+    document.getElementById('password-field').classList.toggle('visible', mode === 'link');
+    clearResponse();
+  }
+
+  function clearResponse() {
+    document.getElementById('response-panel').classList.remove('visible');
+  }
+
+  function showLoading(show) {
+    document.getElementById('loading-bar').classList.toggle('active', show);
+  }
+
+  function showResponse(data, isSuccess) {
+    const panel = document.getElementById('response-panel');
+    const dot = document.getElementById('status-dot');
+    const label = document.getElementById('response-label');
+    const body = document.getElementById('response-body');
+
+    panel.classList.add('visible');
+    dot.className = 'status-dot ' + (isSuccess ? 'success' : 'error');
+    label.textContent = isSuccess ? 'SUCCESS ✓' : 'ERROR ✗';
+    body.textContent = JSON.stringify(data, null, 2);
+
+    // Always show reset button after a response
+    document.getElementById('google-btn-container').style.display = 'none';
+    document.getElementById('reset-btn').style.display = 'inline-block';
+  }
+
+  function resetButton() {
+    // Show the Google button container again and re-render
+    document.getElementById('google-btn-container').style.display = 'block';
+    document.getElementById('reset-btn').style.display = 'none';
+    clearResponse();
+
+    // Re-initialize Google button since GSI removes it after use
+    document.getElementById('google-btn-container').innerHTML = `
+      <div class="g_id_signin"
+        data-type="standard"
+        data-shape="pill"
+        data-theme="filled_black"
+        data-text="signin_with"
+        data-size="large"
+        data-logo_alignment="left"
+        data-width="360">
+      </div>`;
+
+    // Re-render the button
+    if (window.google) {
+      google.accounts.id.renderButton(
+        document.querySelector('.g_id_signin'),
+        { theme: 'filled_black', size: 'large', shape: 'pill', width: 360 }
+      );
+    }
+  }
+
+  async function handleGoogleToken(googleResponse) {
+    const id_token = googleResponse.credential;
+
+    // Log the raw token for debugging
+    console.log('=== GOOGLE TOKEN RECEIVED ===');
+    console.log('id_token (first 50 chars):', id_token.substring(0, 50) + '...');
+    console.log('Mode:', currentMode);
+
+    showLoading(true);
+    clearResponse();
+
+    try {
+      let endpoint = 'http://localhost:5000/api/v1/auth/google';
+      let body = { id_token };
+
+      if (currentMode === 'auth') {
+        const role = document.querySelector('input[name="role"]:checked')?.value || 'player';
+        body.role = role;
+        console.log('Role selected:', role);
+      } else {
+        endpoint = 'http://localhost:5000/api/v1/auth/google/link';
+        const password = document.getElementById('password-input').value;
+        if (!password) {
+          showLoading(false);
+          showResponse({ error: 'Please enter your account password to link Google.' }, false);
+          return;
+        }
+        body.password = password;
+      }
+
+      console.log('Sending to:', endpoint);
+      console.log('Body keys:', Object.keys(body));
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+
+      console.log('=== BACKEND RESPONSE ===');
+      console.log('Status:', res.status, res.statusText);
+      console.log('Response:', JSON.stringify(data, null, 2));
+
+      showLoading(false);
+      showResponse(data, res.ok);
+
+    } catch (err) {
+      console.error('=== FETCH ERROR ===', err);
+
+      showLoading(false);
+
+      // Detect CORS specifically
+      const isCors = err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
+
+      showResponse({
+        error: isCors ? 'CORS or network error — backend unreachable' : err.message,
+        tip: isCors
+          ? 'Make sure your Express app has CORS enabled for this origin. Add the origin of this file to your CORS whitelist.'
+          : 'Check your server is running on port 5000.',
+        raw_error: err.message
+      }, false);
+    }
+  }
+</script>
+
+</body>
+</html>

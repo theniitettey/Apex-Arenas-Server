@@ -15,7 +15,9 @@ class CORSManager {
   private static instance: CORSManager;
 
   private allowedOrigins: string[] = [
-    
+    'http://127.0.0.1:5500',
+    'http://127.0.0.1:5500',  // ← this is exactly what's being blocked
+    'http://localhost:5000',
   ];
 
   private constructor() {}

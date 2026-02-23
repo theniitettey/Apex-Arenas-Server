@@ -137,7 +137,6 @@ const ApexTransactionSchema = new Schema<IApexTransaction>({
 });
 
 // Indexes
-ApexTransactionSchema.index({ idempotency_key: 1 }, { unique: true });
 ApexTransactionSchema.index({ user_id: 1 });
 ApexTransactionSchema.index({ type: 1 });
 ApexTransactionSchema.index({ direction: 1 });

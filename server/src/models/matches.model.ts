@@ -19,36 +19,32 @@ export interface IApexMatch extends Document {
   previous_match_ids?: mongoose.Types.ObjectId[]; // matches that feed into this one
   bracket_position: string; // e.g., 'upper', 'lower', 'grand_final' (for double elim)
   
-  participants: [
-    {
-      user_id?: mongoose.Types.ObjectId; // or team_id for team tournaments
-      team_id?: mongoose.Types.ObjectId;
-      in_game_id: string; // for result verification
-      seed_number: number;
-      score: number; // games won in best-of series
-      result: string; // enum: ['win', 'loss', 'draw', 'no_show', 'pending']
-      is_ready: boolean; // player confirmed ready
-      ready_at?: Date;
-    }
-  ];
+  participants: {
+    user_id?: mongoose.Types.ObjectId; // or team_id for team tournaments
+    team_id?: mongoose.Types.ObjectId;
+    in_game_id: string; // for result verification
+    seed_number: number;
+    score: number; // games won in best-of series
+    result: string; // enum: ['win', 'loss', 'draw', 'no_show', 'pending']
+    is_ready: boolean; // player confirmed ready
+    ready_at?: Date;
+  }[];
   
   // Individual games in a best-of series
-  games?: [
-    {
-      game_number: number; // 1, 2, 3...
-      winner_id?: mongoose.Types.ObjectId;
-      scores: [
-        {
-          participant_id: mongoose.Types.ObjectId;
-          score: number;
-        }
-      ];
-      map?: string;
-      duration_minutes?: number;
-      started_at?: Date;
-      completed_at?: Date;
-    }
-  ];
+  games?: {
+    game_number: number; // 1, 2, 3...
+    winner_id?: mongoose.Types.ObjectId;
+    scores: [
+      {
+        participant_id: mongoose.Types.ObjectId;
+        score: number;
+      }
+    ];
+    map?: string;
+    duration_minutes?: number;
+    started_at?: Date;
+    completed_at?: Date;
+  }[];
   
   winner_id?: mongoose.Types.ObjectId; // user_id or team_id
   loser_id?: mongoose.Types.ObjectId; // useful for loser bracket in double elim
@@ -100,6 +96,13 @@ export interface IApexMatch extends Document {
     overridden_at?: Date;
     reason?: string;
     original_winner_id?: mongoose.Types.ObjectId;
+  };
+
+  // Add to IApexMatch
+  timeouts: {
+    no_show_timeout_minutes: number; // default: 15
+    result_submission_deadline?: Date;
+    auto_forfeit_enabled: boolean;
   };
   
   created_at: Date;
@@ -199,7 +202,15 @@ const ApexMatchSchema = new Schema<IApexMatch>({
     overridden_at: { type: Date },
     reason: { type: String },
     original_winner_id: { type: Schema.Types.ObjectId }
-  }
+  },
+
+  // Add to IApexMatch
+  timeouts: {
+    no_show_timeout_minutes: {type: Number},// default: 15
+    result_submission_deadline: {type: Date},
+    auto_forfeit_enabled: {type: Boolean}
+  },
+
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

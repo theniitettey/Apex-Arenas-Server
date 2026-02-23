@@ -1,6 +1,7 @@
 import app from './app';
 import { databaseManager } from './configs/database.config';
 import { redisManager } from './configs/redis.config';
+import { cronJobsManager } from './shared/utils/cron-jobs.utils';
 import { createLogger } from './shared/utils';
 
 const logger = createLogger('apex-server');
@@ -24,6 +25,9 @@ async function startServer() {
         timeStamp: new Date().toISOString()
       });
     });
+
+    cronJobsManager.start();
+
   } catch (error: any) {
     logger.error("Falied to start server", {
       error: error.message,
@@ -36,6 +40,8 @@ async function startServer() {
 async function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
   try {
+    logger.info("Stopping cron jobs...");
+    cronJobsManager.stop();
     logger.info("Closing redis connection...");
     await redisManager.disconnect();
     logger.info("Closing database connection...");

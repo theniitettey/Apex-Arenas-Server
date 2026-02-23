@@ -1,0 +1,1 @@
+// Verify req.user._id === team.captain_id

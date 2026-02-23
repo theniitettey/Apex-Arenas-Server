@@ -74,6 +74,12 @@ export interface IApexTeam extends Document {
   
   region?: string; // e.g., 'GH', 'NG'
   
+  verification: {
+  in_game_id_verified: boolean;
+  verified_at?: Date;
+  verified_by?: mongoose.Types.ObjectId; // captain or admin
+};
+
   created_at: Date;
   updated_at: Date;
   disbanded_at?: Date; // if team is disbanded
@@ -144,7 +150,15 @@ const ApexTeamSchema = new Schema<IApexTeam>({
   region: { type: String },
   
   disbanded_at: { type: Date },
-  is_active: { type: Boolean, default: true }
+  is_active: { type: Boolean, default: true },
+
+  verification: {
+    in_game_id_verified: {type: Boolean},
+    verified_at: {types: Date},
+    verified_by: {type: Schema.Types.ObjectId}
+  }
+
+
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });
