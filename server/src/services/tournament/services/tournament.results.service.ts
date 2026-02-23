@@ -107,8 +107,17 @@ export class TournamentResultsService {
       // 7. Trigger async verification (optional: could be done immediately or via queue)
       // For simplicity, we call verifyWinners here, but in production you might queue it.
       // We'll do it async without awaiting to not block response.
-      this.verifyWinners(tournamentId).catch(err => {
+      this.verifyWinners(tournamentId).catch(async (err) => {
         logger.error('Auto-verification failed', { tournamentId, error: err.message });
+        // Mark the tournament so admins can find and manually intervene
+        await Tournament.findByIdAndUpdate(tournamentId, {
+          'results.verification_status': 'failed',
+          'results.failure_reason': err.message
+        }).catch(updateErr => {
+          logger.error('Could not mark verification failure on tournament', {
+            tournamentId, error: updateErr.message
+          });
+        });
       });
 
       logger.info('Tournament results submitted, verification started', { tournamentId });
@@ -200,8 +209,16 @@ export class TournamentResultsService {
       if (allVerified) {
         logger.info('All winners verified, proceeding to prize distribution', { tournamentId });
         // Trigger distribution – again async
-        this.distributePrizes(tournamentId).catch(err => {
+        this.distributePrizes(tournamentId).catch(async (err) => {
           logger.error('Prize distribution failed', { tournamentId, error: err.message });
+          await Tournament.findByIdAndUpdate(tournamentId, {
+            'results.verification_status': 'distribution_failed',
+            'results.failure_reason': err.message
+          }).catch(updateErr => {
+            logger.error('Could not mark distribution failure on tournament', {
+              tournamentId, error: updateErr.message
+            });
+          });
         });
       } else {
         // If not all verified, tournament remains in verifying_results
@@ -529,15 +546,22 @@ export class TournamentResultsService {
         user.stats.win_rate = ((user.stats.tournaments_won || 0) / user.stats.tournaments_played) * 100;
       }
 
+      await user.save();
+      
       // Update wallet with prize (if applicable)
       if (prize > 0) {
-        // Prize goes to pending balance first, then after payout request approval it moves
-        user.wallet.pending_balance = (user.wallet.pending_balance || 0) + prize;
-        user.wallet.total_balance = (user.wallet.available_balance || 0) + user.wallet.pending_balance;
-        user.wallet.last_transaction_at = new Date();
+        await User.findByIdAndUpdate(userId, {
+          $inc: {
+            'wallet.pending_balance': prize,
+            'wallet.total_balance': prize
+          },
+          $set: {
+            'wallet.last_transaction_at': new Date()
+          }
+        });
       }
 
-      await user.save();
+      
 
       logger.info('Player stats updated', { userId });
     } catch (error: any) {

@@ -571,68 +571,70 @@ export class BracketGeneratorService {
   // LINK MATCHES (single elimination)
   // ============================================
   async linkMatches(matches: IApexMatch[], pairings: MatchPairing[]): Promise<void> {
-    try {
-      logger.info('Linking matches', { matchCount: matches.length });
+    const bulkOps: any[] = [];
 
-      // Create map for quick lookup
-      const matchMap = new Map<string, mongoose.Types.ObjectId>();
-      matches.forEach(match => {
-        const key = `${match.round}-${match.match_number}-${match.bracket_position}`;
-        matchMap.set(key, match._id);
-      });
+    const matchMap = new Map<string, mongoose.Types.ObjectId>();
+    matches.forEach(match => {
+      const key = `${match.round}-${match.match_number}-${match.bracket_position}`;
+      matchMap.set(key, match._id);
+    });
 
-      // For each pairing, set next_match_id for previous matches
-      for (const pairing of pairings) {
-        const currentKey = `${pairing.round}-${pairing.match_number}-${pairing.bracket_position}`;
-        const currentId = matchMap.get(currentKey);
-        if (!currentId) continue;
+    for (const pairing of pairings) {
+      const currentKey = `${pairing.round}-${pairing.match_number}-${pairing.bracket_position}`;
+      const currentId = matchMap.get(currentKey);
+      if (!currentId) continue;
 
-        // For single elimination and upper bracket, next match is (round+1, ceil(match_number/2))
-        if (pairing.bracket_position === 'main' || pairing.bracket_position === 'upper') {
-          const nextRound = pairing.round + 1;
-          const nextMatchNumber = Math.ceil(pairing.match_number / 2);
-          const nextKey = `${nextRound}-${nextMatchNumber}-${pairing.bracket_position}`;
-          const nextId = matchMap.get(nextKey);
-          
-          if (nextId) {
-            await Match.findByIdAndUpdate(currentId, { next_match_id: nextId });
-            
-            // Also add current match to previous_match_ids of next match
-            await Match.findByIdAndUpdate(nextId, {
-              $addToSet: { previous_match_ids: currentId }
-            });
-          }
-        }
+      if (pairing.bracket_position === 'main' || pairing.bracket_position === 'upper') {
+        const nextRound = pairing.round + 1;
+        const nextMatchNumber = Math.ceil(pairing.match_number / 2);
+        const nextKey = `${nextRound}-${nextMatchNumber}-${pairing.bracket_position}`;
+        const nextId = matchMap.get(nextKey);
 
-        // Handle byes: automatically advance the player
-        const hasBye = pairing.participants.some(p => p.is_bye === true) && 
-                       pairing.participants.filter(p => !p.is_bye).length === 1;
-        
-        if (hasBye && pairing.round === 1) {
-          // This match has a bye – the actual player automatically wins
-          const winnerParticipant = pairing.participants.find(p => !p.is_bye);
-          if (winnerParticipant && pairing.next_match_id) {
-            // We'll advance winner in match.service when match is created.
-            // Here we just mark that the match is effectively a bye.
-            await Match.findByIdAndUpdate(currentId, {
-              status: 'completed',
-              winner_id: winnerParticipant.user_id || winnerParticipant.team_id,
-              'schedule.completed_at': new Date()
-            });
-          }
+        if (nextId) {
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: currentId },
+              update: { $set: { next_match_id: nextId } }
+            }
+          });
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: nextId },
+              update: { $addToSet: { previous_match_ids: currentId } }
+            }
+          });
         }
       }
 
-      logger.info('Matches linked successfully');
-    } catch (error: any) {
-      logger.error('Link matches failed', { error: error.message });
-      throw new AppError(
-        'LINKING_FAILED',
-        error.message || 'Failed to link matches'
-      );
-    }
-  }
+      // Bye handling (keep same as before)
+      const hasBye = pairing.participants.some(p => p.is_bye === true) &&
+                    pairing.participants.filter(p => !p.is_bye).length === 1;
 
+      if (hasBye && pairing.round === 1) {
+        const winnerParticipant = pairing.participants.find(p => !p.is_bye);
+        if (winnerParticipant) {
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: currentId },
+              update: {
+                $set: {
+                  status: 'completed',
+                  winner_id: winnerParticipant.user_id || winnerParticipant.team_id,
+                  'schedule.completed_at': new Date()
+                }
+              }
+            }
+          });
+        }
+      }
+    }
+
+    if (bulkOps.length > 0) {
+      await Match.bulkWrite(bulkOps);
+    }
+
+    logger.info('Matches linked successfully');
+  }
   // ============================================
   // HELPER: Standard bracket order for single elimination
   // ============================================

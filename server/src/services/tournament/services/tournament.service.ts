@@ -425,7 +425,7 @@ export class TournamentService {
     try {
       const tournament = await Tournament.findById(tournamentId).select('capacity');
       if (!tournament) {
-        throw new AppError('TOURNAMENT_.NOT_FOUND', 'Tournament not found');
+        throw new AppError('TOURNAMENT_NOT_FOUND', 'Tournament not found');
       }
 
       const current = tournament.capacity.current_participants || 0;

@@ -25,16 +25,17 @@ export const notificationHelper = {
   /**
    * Notify user that they have been promoted from the waitlist
    */
-  async notifyWaitlistPromotion(userId: string, tournament: any): Promise<void> {
+  async notifyWaitlistPromotion(userId: string, tournament: any, paymentDeadline?: Date): Promise<void> {
     logger.info('[NOTIFICATION] Waitlist promotion', {
       userId,
       tournamentId: tournament?._id || tournament,
       tournamentTitle: tournament?.title,
       entryFee: tournament?.entry_fee,
       isFree: tournament?.is_free,
+      paymentDeadline: paymentDeadline ? paymentDeadline.toISOString() : undefined,
       message: tournament?.is_free 
         ? 'You have been promoted from the waitlist and are now registered!'
-        : 'You have been promoted from the waitlist. Please complete payment within 24 hours.',
+        : `You have been promoted from the waitlist. Please complete payment within 15 minutes. Payment deadline: ${paymentDeadline ? paymentDeadline.toISOString() : 'N/A'}`,
       timestamp: new Date().toISOString()
     });
   },

@@ -529,6 +529,17 @@ export class MatchSessionService {
     }
   }
 
+  async cleanupOldSessions(): Promise<number> {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const result = await MatchSession.updateMany(
+      { status: 'archived', ended_at: { $lte: oneDayAgo } },
+      { $set: { messages: [], message_count: 0 } }
+    );
+
+    return result.modifiedCount;
+  }
+
   // ============================================
   // PRIVATE: Add system message
   // ============================================

@@ -6,7 +6,8 @@ import {
   Game,
   type IApexTournament,
   type IApexRegistration,
-} from "../../../models"
+} from "../../../models";
+import { env } from '../../../configs/env.config';
 import { notificationHelper } from './notification.helper';
 import { tournamentValidationService } from './tournament.validation.service';
 import { createLogger } from '../../../shared/utils/logger.utils';
@@ -73,7 +74,7 @@ export class RegistrationService {
       });
 
       const isFull = currentCount >= tournament.capacity.max_participants;
-      let status: 'pending_payment' | 'registered' = 'pending_payment';
+      let status: 'pending_payment' | 'registered' | 'waitlist' = 'pending_payment';
       let waitlistPosition: number | undefined = undefined;
       let isWaitlist = false;
 
@@ -84,7 +85,7 @@ export class RegistrationService {
           if (tournament.capacity.waitlist_enabled) {
             isWaitlist = true;
             waitlistPosition = await this.getNextWaitlistPosition(tournamentId);
-            status = 'pending_payment';
+            status = 'waitlist';
           } else {
             throw new AppError(
               'TOURNAMENT_FULL',
@@ -303,6 +304,7 @@ export class RegistrationService {
     );
   }
 
+ 
   private async _promoteFromWaitlistInternal(tournamentId: string): Promise<IApexRegistration | null> {
     try {
       logger.info('Attempting waitlist promotion', { tournamentId });
@@ -340,27 +342,30 @@ export class RegistrationService {
       waitlistedReg.promoted_from_waitlist = true;
       waitlistedReg.promoted_at = new Date();
       waitlistedReg.waitlist_position = undefined;
+
+      // Set payment deadline for paid tournaments (dynamic)
+      if (!tournament.is_free) {
+        const now = new Date();
+        const paymentWindowMs = env.WAITLIST_PAYMENT_WINDOW_MINUTES * 60 * 1000;
+        const maxDeadline = new Date(now.getTime() + paymentWindowMs);
+
+        waitlistedReg.payment_deadline = maxDeadline;
+        
+      }
+
       await waitlistedReg.save();
 
       try {
         await notificationHelper.notifyWaitlistPromotion(
           waitlistedReg.user_id.toString(),
-          tournament
+          tournament,
+          waitlistedReg.payment_deadline 
         );
       } catch (notifyError) {
         logger.warn('Failed to send promotion notification', { 
           userId: waitlistedReg.user_id, 
           error: notifyError 
         });
-      }
-
-      if (tournament.is_free) {
-        waitlistedReg.status = 'registered';
-        tournament.capacity.current_participants += 1;
-      } else {
-        waitlistedReg.status = 'pending_payment';
-        // Set payment deadline (e.g., 24 hours)
-        waitlistedReg.payment_deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
       }
 
       // Update counts
@@ -382,6 +387,7 @@ export class RegistrationService {
       return null;
     }
   }
+
 
   async expireUnpaidPromotions(): Promise<number> {
     try {
@@ -433,8 +439,12 @@ export class RegistrationService {
     transactionId: mongoose.Types.ObjectId;
     error?: string;
   }> {
-    // TODO: Implement actual payment processing
-    // This is a placeholder
+    if (process.env.NODE_ENV === 'production') {
+      throw new AppError(
+        'PAYMENT_NOT_IMPLEMENTED',
+        'Payment processing is not yet implemented'
+      );
+    }
     logger.info('Processing payment (placeholder)', { registrationId, paymentData });
     
     return {

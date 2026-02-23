@@ -139,7 +139,7 @@ export class MatchService {
       if (error instanceof AppError) throw error;
       logger.error('Submit result failed', { matchId, error: error.message });
       throw new AppError(
-        'MATCH_NOT_FOUND',
+        'MATCH_RESULT_SUBMIT_FAILED',
         error.message || 'Failed to submit result'
       );
     }
@@ -157,12 +157,25 @@ export class MatchService {
         throw new AppError('MATCH_NOT_FOUND', 'Match not found');
       }
 
-      // 1. Verify user is the opponent (the one who didn't submit)
-      const isOpponent = match.participants.some(
-        p => (p.user_id?.toString() === userId || p.team_id?.toString() === userId) &&
-             p.user_id?.toString() !== match.result_reported_by?.toString() &&
-             p.team_id?.toString() !== match.result_reported_by?.toString()
+      // Find the participant who submitted the result (by their user_id)
+      const submitterParticipant = match.participants.find(
+        p => p.user_id?.toString() === match.result_reported_by?.toString()
       );
+
+      // The confirming user must be a participant, but NOT the one who submitted
+      const isOpponent = match.participants.some(p => {
+        const isThisUser = 
+          p.user_id?.toString() === userId || 
+          p.team_id?.toString() === userId;
+
+        const isSubmitter = submitterParticipant
+          ? (p.user_id?.toString() === submitterParticipant.user_id?.toString() ||
+            p.team_id?.toString() === submitterParticipant.team_id?.toString())
+          : false;
+
+        return isThisUser && !isSubmitter;
+      });
+
       if (!isOpponent) {
         throw new AppError(
           'MATCH_UNAUTHORIZED',
