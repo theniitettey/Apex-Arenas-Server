@@ -1,60 +1,61 @@
-import dotenv from 'dotenv';
-import {cleanEnv, str, num, bool} from 'envalid';
-
+import dotenv from "dotenv";
+import { cleanEnv, str, num, bool } from "envalid";
 
 dotenv.config();
 
 export const env = cleanEnv(process.env, {
   //Server Configs
-  NODE_ENV: str({choices: ['development', 'production', 'test'], default: 'development'}),
-  PORT: num({default: 5000}),
-  API_VERSION: str({default: 'v1'}),
-  SERVICE_NAME: str({default: "APEX_API_SERVICE"}),
-  SERVICE_VERSION: str({default: "1.0.0"}),
+  NODE_ENV: str({
+    choices: ["development", "production", "test"],
+    default: "development",
+  }),
+  PORT: num({ default: 5000 }),
+  API_VERSION: str({ default: "v1" }),
+  SERVICE_NAME: str({ default: "APEX_API_SERVICE" }),
+  SERVICE_VERSION: str({ default: "1.0.0" }),
 
   // Cloudinary
-  CLOUDINARY_CLOUD_NAME: str({ default: '' }),
-  CLOUDINARY_API_KEY: str({ default: '' }),
-  CLOUDINARY_API_SECRET: str({ default: '' }),
-  
+  CLOUDINARY_CLOUD_NAME: str({ default: "" }),
+  CLOUDINARY_API_KEY: str({ default: "" }),
+  CLOUDINARY_API_SECRET: str({ default: "" }),
+
   // Verification settings - use num() validators
   MAX_DOCUMENT_SIZE_BYTES: num({ default: 5242880 }), // 5MB default
   MAX_RESUBMISSION_COUNT: num({ default: 3 }),
 
   // MongoDB Configs
   MONGODB_URI: str(),
-  MONGODB_DB_NAME: str({ default: 'auth_service' }),
+  MONGODB_DB_NAME: str({ default: "auth_service" }),
   MONGODB_POOL_SIZE: num({ default: 10 }),
   MONGODB_CONNECTION_TIMEOUT: num({ default: 30000 }),
 
   // Redis Configs
   REDIS_URL: str(),
-  REDIS_HOST: str({ default: 'localhost' }),
+  REDIS_HOST: str({ default: "localhost" }),
   REDIS_PORT: num({ default: 6379 }),
-  REDIS_PASSWORD: str({ default: '' }),
+  REDIS_PASSWORD: str({ default: "" }),
   REDIS_DB: num({ default: 0 }),
   REDIS_TTL_OTP: num({ default: 600 }), // 10m
   REDIS_TTL_SESSION: num({ default: 86400 }), // 24h
   REDIS_TLS: bool({ default: false }),
   IDEMPOTENCY_KEY_TTL: num({ default: 3600 }),
-  LOCKOUT_WINDOW_MINUTES: num({ default: 900 }), 
-
+  LOCKOUT_WINDOW_MINUTES: num({ default: 900 }),
 
   // JWT & Security Configs
   JWT_ACCESS_SECRET: str(),
-  JWT_ACCESS_EXPIRES_IN: num({default: 900}),
-  JWT_REFRESH_EXPIRES_IN: str({ default: '7d' }),
+  JWT_ACCESS_EXPIRES_IN: num({ default: 900 }),
+  JWT_REFRESH_EXPIRES_IN: str({ default: "7d" }),
 
   JWT_ADMIN_ACCESS_SECRET: str(),
-  JWT_ADMIN_ACCESS_EXPIRES_IN: num({default: 600}),
+  JWT_ADMIN_ACCESS_EXPIRES_IN: num({ default: 600 }),
 
-  JWT_ADMIN_REFRESH_EXPIRES_IN: str({ default: '1d' }),
-  JWT_ISSUER_USERS: str({ default: 'apex_service' }),
-  JWT_ISSUER_ADMIN: str({ default: 'apex_admin_service' }),
+  JWT_ADMIN_REFRESH_EXPIRES_IN: str({ default: "1d" }),
+  JWT_ISSUER_USERS: str({ default: "apex_service" }),
+  JWT_ISSUER_ADMIN: str({ default: "apex_admin_service" }),
   INTERNAL_SERVICE_SECRET: str(),
   BCRYPT_ROUNDS: num({ default: 12 }),
   ADMIN_SECRET_KEY: str(),
-  ADMIN_EMAILS: str({ default: '' }), // Comma separated list of admin emails
+  ADMIN_EMAILS: str({ default: "" }), // Comma separated list of admin emails
 
   // Lockout Configuration
   LOCKOUT_MAX_ATTEMPTS_USER: num({ default: 5 }),
@@ -92,16 +93,16 @@ export const env = cleanEnv(process.env, {
   AUDIT_LOG_RETENTION_DAYS: num({ default: 90 }),
   SUSPICIOUS_ACTIVITY_WINDOW_HOURS: num({ default: 24 }),
   FAILED_LOGIN_WINDOW_MINUTES: num({ default: 15 }),
-  
+
   // Activity Tracking
   ACTIVITY_WINDOW_DAYS: num({ default: 30 }),
-  
+
   // 2FA Configuration
   TOTP_DIGITS: num({ default: 6 }),
   TOTP_PERIOD_SECONDS: num({ default: 30 }),
   BACKUP_CODES_COUNT: num({ default: 10 }),
   BACKUP_CODE_LENGTH: num({ default: 8 }),
-  
+
   // CORS
   CORS_CREDENTIALS: bool({ default: true }),
 
@@ -114,21 +115,25 @@ export const env = cleanEnv(process.env, {
   OTP_RATE_LIMIT_MAX: num({ default: 5 }),
 
   // Logging.
-  LOG_LEVEL: str({ choices: ['error', 'warn', 'info', 'debug'], default: 'info' }),
-  LOG_FILE_PATH: str({ default: './logs/auth-service.log' }),
+  LOG_LEVEL: str({
+    choices: ["error", "warn", "info", "debug"],
+    default: "info",
+  }),
+  LOG_FILE_PATH: str({ default: "./logs/auth-service.log" }),
+  ENABLE_FILE_LOGGING: bool({ default: false }),
 
   // Health check
   HEALTH_CHECK_INTERVAL: num({ default: 30000 }), // 30s
 
   // App Info
-  APP_NAME: str({ default: 'ApexArenas' }),
+  APP_NAME: str({ default: "ApexArenas" }),
 
   // Encryption (for TOTP secrets)
-  ENCRYPTION_KEY: str({ default: '' }),
+  ENCRYPTION_KEY: str({ default: "" }),
 
   // Add these to your env object/interface
-  GOOGLE_CLIENT_ID: str({ default: '' }),
-  GOOGLE_CLIENT_SECRET: str({ default: '' }),
+  GOOGLE_CLIENT_ID: str({ default: "" }),
+  GOOGLE_CLIENT_SECRET: str({ default: "" }),
 
   // Idempotency
   IDEMPOTENCY_TTL: num({ default: 3600 }),
@@ -140,38 +145,33 @@ export const env = cleanEnv(process.env, {
   MAX_NAME_LENGTH: num({ default: 50 }),
 
   // Resend API Key
-  RESEND_API_KEY: str({ default: '' }),
-  EMAIL_FROM_NOREPLY: str({ default: 'no-reply@apexarenas.com' }),
-  EMAIL_FROM_SUPPORT: str({ default: 'support@apexarenas.com' }),
+  RESEND_API_KEY: str({ default: "" }),
+  EMAIL_FROM_NOREPLY: str({ default: "no-reply@apexarenas.com" }),
+  EMAIL_FROM_SUPPORT: str({ default: "support@apexarenas.com" }),
   EMAIL_ENABLED: bool({ default: true }),
-  EMAIL_REPLY_TO: str({ default: 'support@apexarenas.com' }),
+  EMAIL_REPLY_TO: str({ default: "support@apexarenas.com" }),
 
-  WAITLIST_PAYMENT_WINDOW_MINUTES: num({default: 15}) ,
-
+  WAITLIST_PAYMENT_WINDOW_MINUTES: num({ default: 15 }),
 });
 
-
-
 // Custom Validation Logic (if needed)
+// NB: process.exit would not execute after a throw,
+// the server.ts process listener would catch it so it can be removed here
 
 (() => {
-  
-  if (!env.MONGODB_URI.startsWith('mongodb://') && !env.MONGODB_URI.startsWith('mongodb+srv://')) {
-     throw new Error('MONGODB_URI must start with "mongodb://" or "mongodb+srv://"');
-    process.exit(1);
+  if (
+    !env.MONGODB_URI.startsWith("mongodb://") &&
+    !env.MONGODB_URI.startsWith("mongodb+srv://")
+  ) {
+    throw new Error(
+      'MONGODB_URI must start with "mongodb://" or "mongodb+srv://"',
+    );
   }
-
-  if (!env.REDIS_HOST) {
-     throw new Error('REDIS_HOST is required');
-    process.exit(1);
-  }
-
-
 })();
 
-export const isProduction = env.NODE_ENV === 'production';
-export const isDevelopment = env.NODE_ENV === 'development';
-export const isTest = env.NODE_ENV === 'test';
+export const isProduction = env.NODE_ENV === "production";
+export const isDevelopment = env.NODE_ENV === "development";
+export const isTest = env.NODE_ENV === "test";
 
 export const mongoOptions = {
   dbName: env.MONGODB_DB_NAME,
@@ -183,7 +183,7 @@ export const mongoOptions = {
 
 export const redisOptions = {
   host: env.REDIS_HOST,
-  port: env.REDIS_PORT, 
+  port: env.REDIS_PORT,
   password: env.REDIS_PASSWORD || undefined,
   db: env.REDIS_DB,
   tls: env.REDIS_TLS ? {} : undefined,
@@ -197,13 +197,10 @@ export const jwtOptions = {
     expiresIn: env.JWT_ACCESS_EXPIRES_IN,
     issuer_audience: env.JWT_ISSUER_USERS,
     issuer_admin: env.JWT_ISSUER_ADMIN,
-
   },
   refresh: {
-  
     expiresIn: env.JWT_REFRESH_EXPIRES_IN,
     issuer_audience: env.JWT_ISSUER_USERS,
     issuer_admin: env.JWT_ISSUER_ADMIN,
   },
 };
-
