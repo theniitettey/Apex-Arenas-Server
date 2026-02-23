@@ -1,15 +1,16 @@
-import app from './app';
-import { databaseManager } from './configs/database.config';
-import { redisManager } from './configs/redis.config';
-import { cronJobsManager } from './shared/utils/cron-jobs.utils';
-import { createLogger } from './shared/utils';
+import app from "./app";
+import { databaseManager } from "./configs/database.config";
+import { redisManager } from "./configs/redis.config";
+import { cronJobsManager } from "./shared/utils/cron-jobs.utils";
+import { createLogger } from "./shared/utils";
+import { env } from "./configs/env.config";
 
-const logger = createLogger('apex-server');
+const logger = createLogger("apex-server");
 
-const PORT = process.env.PORT
+const PORT = env.PORT;
 
 async function startServer() {
-  try{
+  try {
     logger.info("Starting Apex Server");
 
     logger.info("Connecting to database...");
@@ -22,14 +23,13 @@ async function startServer() {
     app.listen(PORT, () => {
       logger.info(`Apex Server running on ${PORT}`, {
         port: PORT,
-        timeStamp: new Date().toISOString()
+        timeStamp: new Date().toISOString(),
       });
     });
 
     cronJobsManager.start();
-
   } catch (error: any) {
-    logger.error("Falied to start server", {
+    logger.error("Failed to start server", {
       error: error.message,
       stack: error.stack,
     });
@@ -49,18 +49,23 @@ async function gracefulShutdown(signal: string) {
     logger.info("Shutdown complete, exiting process.");
     process.exit(0);
   } catch (error: any) {
-    logger.error('Error during graceful shutdown', {error: error.message, stack: error.stack});
+    logger.error("Error during graceful shutdown", {
+      error: error.message,
+      stack: error.stack,
+    });
     process.exit(1);
   }
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception', {error: error.message, stack: error.stack});
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception", {
+    error: error.message,
+    stack: error.stack,
+  });
   process.exit(1);
-})
-
+});
 
 startServer();
