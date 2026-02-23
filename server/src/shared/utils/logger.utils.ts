@@ -1,19 +1,19 @@
-import winston from 'winston';
-import path from 'path';
-import fs from 'fs'
-import {env} from "../../configs/env.config"
-
+import winston from "winston";
+import path from "path";
+import fs from "fs";
+import { env } from "../../configs/env.config";
 
 // Custom log format for structured logging
 const logFormat = winston.format.combine(
   winston.format.timestamp({
-    format: 'YYYY-MM-DD HH:mm:ss.SSS'
+    format: "YYYY-MM-DD HH:mm:ss.SSS",
   }),
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.printf((info) => {
-    const { timestamp, level, message, service, requestId, userId, ...meta } = info;
-    
+    const { timestamp, level, message, service, requestId, userId, ...meta } =
+      info;
+
     const logEntry = {
       timestamp,
       level: level.toUpperCase(),
@@ -21,34 +21,34 @@ const logFormat = winston.format.combine(
       message,
       ...(requestId ? { requestId } : {}),
       ...(userId ? { userId } : {}),
-      ...(Object.keys(meta).length > 0 && { meta })
+      ...(Object.keys(meta).length > 0 && { meta }),
     };
 
     return JSON.stringify(logEntry);
-  })
+  }),
 );
 
 // Console format for development
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({
-    format: 'HH:mm:ss.SSS'
+    format: "HH:mm:ss.SSS",
   }),
   winston.format.colorize(),
   winston.format.errors({ stack: true }),
   winston.format.printf((info) => {
     const { timestamp, level, message, requestId, userId, ...meta } = info;
-    
+
     let logMessage = `[${timestamp}] ${level}: ${message}`;
-    
+
     if (requestId) logMessage += ` [ReqID: ${requestId}]`;
     if (userId) logMessage += ` [UserID: ${userId}]`;
-    
+
     if (Object.keys(meta).length > 0) {
       logMessage += `\n${JSON.stringify(meta, null, 2)}`;
     }
-    
+
     return logMessage;
-  })
+  }),
 );
 
 // Create transports array
@@ -59,27 +59,27 @@ if (env.isDevelopment) {
   transports.push(
     new winston.transports.Console({
       format: consoleFormat,
-      level: env.LOG_LEVEL
-    })
+      level: env.LOG_LEVEL,
+    }),
   );
 } else {
   // In production, use structured JSON logging to console
   transports.push(
     new winston.transports.Console({
       format: logFormat,
-      level: env.LOG_LEVEL
-    })
+      level: env.LOG_LEVEL,
+    }),
   );
 }
 
 // File transport for persistent logging
-if (process.env.ENABLE_FILE_LOGGING === 'true') {
+if (env.ENABLE_FILE_LOGGING) {
   // Ensure logs directory exists
   const logDir = path.dirname(env.LOG_FILE_PATH);
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
-  
+
   transports.push(
     // Combined log file
     new winston.transports.File({
@@ -88,18 +88,18 @@ if (process.env.ENABLE_FILE_LOGGING === 'true') {
       level: env.LOG_LEVEL,
       maxsize: 10485760, // 10MB
       maxFiles: 5,
-      tailable: true
+      tailable: true,
     }),
-    
+
     // Error-only log file
     new winston.transports.File({
-      filename: env.LOG_FILE_PATH.replace('.log', '.error.log'),
+      filename: env.LOG_FILE_PATH.replace(".log", ".error.log"),
       format: logFormat,
-      level: 'error',
+      level: "error",
       maxsize: 10485760, // 10MB
       maxFiles: 3,
-      tailable: true
-    })
+      tailable: true,
+    }),
   );
 }
 
@@ -109,13 +109,13 @@ export const logger = winston.createLogger({
   format: logFormat,
   defaultMeta: {
     service: env.SERVICE_NAME,
-    environment: env.NODE_ENV
+    environment: env.NODE_ENV,
   },
   transports,
   // Don't exit on error
   exitOnError: false,
   // Silence winston's own logs unless in debug mode
-  silent: false
+  silent: false,
 });
 
 // Custom logging methods with context
@@ -132,52 +132,55 @@ export class Logger {
     const logData = {
       ...meta,
       ...(this.requestId && { requestId: this.requestId }),
-      ...(this.userId && { userId: this.userId })
+      ...(this.userId && { userId: this.userId }),
     };
 
     logger.log(level, message, logData);
   }
 
   error(message: string, meta?: object): void {
-    this.log('error', message, meta);
+    this.log("error", message, meta);
   }
 
   warn(message: string, meta?: object): void {
-    this.log('warn', message, meta);
+    this.log("warn", message, meta);
   }
 
   info(message: string, meta?: object): void {
-    this.log('info', message, meta);
+    this.log("info", message, meta);
   }
 
   debug(message: string, meta?: object): void {
-    this.log('debug', message, meta);
+    this.log("debug", message, meta);
   }
 
   // Audit logging for security events
-  audit(action: string, details: {
-    userId?: string;
-    email?: string;
-    ip?: string;
-    userAgent?: string;
-    success: boolean;
-    reason?: string;
-    [key: string]: any;
-  }): void {
-    this.log('info', `AUDIT: ${action}`, {
+  audit(
+    action: string,
+    details: {
+      userId?: string;
+      email?: string;
+      ip?: string;
+      userAgent?: string;
+      success: boolean;
+      reason?: string;
+      [key: string]: any;
+    },
+  ): void {
+    this.log("info", `AUDIT: ${action}`, {
       audit: true,
       action,
-      ...details
+      ...details,
     });
   }
 
   // Performance logging
   performance(operation: string, duration: number, meta?: object): void {
-    this.log('info', `PERFORMANCE: ${operation}`, {
+    this.log("info", `PERFORMANCE: ${operation}`, {
       performance: true,
       operation,
       duration,
-      ...meta
+      ...meta,
     });
   }
 
@@ -191,18 +194,18 @@ export class Logger {
     userAgent?: string;
   }): void {
     const { method, url, statusCode, responseTime, ip, userAgent } = req;
-    
-    this.log('info', `HTTP ${method} ${url}`, {
+
+    this.log("info", `HTTP ${method} ${url}`, {
       http: true,
       method,
       url,
       statusCode,
       responseTime,
       ip,
-      userAgent
+      userAgent,
     });
   }
-} 
+}
 
 // Helper function to create contextual logger
 export const createLogger = (requestId?: string, userId?: string): Logger => {
@@ -211,20 +214,24 @@ export const createLogger = (requestId?: string, userId?: string): Logger => {
 
 // Helper function to extract request ID from request object
 export const getRequestId = (req: any): string => {
-  return req.headers['x-request-id'] || req.id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return (
+    req.headers["x-request-id"] ||
+    req.id ||
+    `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  );
 };
 
 // Helper function to log API responses
 export const logApiResponse = (req: any, res: any, responseData?: any) => {
   const requestId = getRequestId(req);
   const contextLogger = createLogger(requestId);
-  
+
   const logData: any = {
     method: req.method,
     url: req.originalUrl || req.url,
     statusCode: res.statusCode,
     ip: req.ip || req.connection?.remoteAddress,
-    userAgent: req.headers['user-agent']
+    userAgent: req.headers["user-agent"],
   };
 
   // Add response time if available
@@ -233,7 +240,11 @@ export const logApiResponse = (req: any, res: any, responseData?: any) => {
   }
 
   // Don't log sensitive response data
-  if (responseData && !req.originalUrl?.includes('/login') && !req.originalUrl?.includes('/register')) {
+  if (
+    responseData &&
+    !req.originalUrl?.includes("/login") &&
+    !req.originalUrl?.includes("/register")
+  ) {
     logData.responseSize = JSON.stringify(responseData).length;
   }
 
@@ -241,7 +252,12 @@ export const logApiResponse = (req: any, res: any, responseData?: any) => {
 };
 
 // Helper function for database operations logging
-export const logDatabaseOperation = (operation: string, collection: string, duration: number, error?: Error) => {
+export const logDatabaseOperation = (
+  operation: string,
+  collection: string,
+  duration: number,
+  error?: Error,
+) => {
   if (error) {
     logger.error(`Database operation failed: ${operation}`, {
       database: true,
@@ -249,78 +265,83 @@ export const logDatabaseOperation = (operation: string, collection: string, dura
       collection,
       duration,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
   } else {
     logger.debug(`Database operation completed: ${operation}`, {
       database: true,
       operation,
       collection,
-      duration
+      duration,
     });
   }
 };
 
 // Helper function for queue operations logging
-export const logQueueOperation = (operation: string, queue: string, eventId?: string, error?: Error) => {
+export const logQueueOperation = (
+  operation: string,
+  queue: string,
+  eventId?: string,
+  error?: Error,
+) => {
   if (error) {
     logger.error(`Queue operation failed: ${operation}`, {
       queue: true,
       operation,
       queueName: queue,
       eventId,
-      error: error.message
+      error: error.message,
     });
   } else {
     logger.info(`Queue operation completed: ${operation}`, {
       queue: true,
       operation,
       queueName: queue,
-      eventId
+      eventId,
     });
   }
 };
 
 // Startup logging
 export const logStartup = (port: number, environment: string) => {
-  logger.info('Auth service starting up', {
+  logger.info("Auth service starting up", {
     startup: true,
     port,
     environment,
     nodeVersion: process.version,
-    pid: process.pid
+    pid: process.pid,
   });
 };
 
 // Shutdown logging
 export const logShutdown = (reason: string) => {
-  logger.info('Auth service shutting down', {
+  logger.info("Auth service shutting down", {
     shutdown: true,
     reason,
-    uptime: process.uptime()
+    uptime: process.uptime(),
   });
 };
 
 // Error handling for uncaught exceptions
 if (env.isProduction) {
-  process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception', {
+  process.on("uncaughtException", (error) => {
+    logger.error("Uncaught Exception", {
       error: error.message,
       stack: error.stack,
-      fatal: true
+      fatal: true,
     });
-    
+
     // Give logger time to write before exiting
     setTimeout(() => {
       process.exit(1);
     }, 1000);
   });
 
-  process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection', {
+  process.on("unhandledRejection", (reason, promise) => {
+    logger.error("Unhandled Rejection", {
       reason: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
-      promise: promise.toString()
+      promise: promise.toString(),
     });
   });
 }
