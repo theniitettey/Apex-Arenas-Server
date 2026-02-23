@@ -155,3 +155,6 @@ dist/
 .vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Package-lock.json
+package-lock.json
